@@ -91,24 +91,38 @@ def main():
         # choose_next_speaker().  # On first iteration it will be forced to first human.
         # need to force same speaker as created any dialog that is popped when the user uses that feature.
 
+        # at the top of the loop we have n-1's unprocessed human or NPC output.
+        # record what happens for HHMMH to cover all transitions.
+        
         #if speaker_is_human(current_speaker):
-            #   do:
-            #     get from stdin (or, on first time through the loop, from initial prompt)
-            #     case /quit: quit the loop; end game
-            #     case /temperature: change temp
-            #     case /undo: un-commit the last update to global state.  see notes below (**)
-            #     case /save
-            #     case /load
-            #     case /reveal (to end game or cheat)
-            #     case maybe someday: in-game edits of game state (god mode, debugging/profiling/optimizing)
-            #     default break do loop; exit with user input to go into history as verbatim speech
-            #   canonicalize_human_output()  # this function correlated with format convenient for humans to output
+            #   # human never needs to compute n-1's deltas b/c human sees the flowery speech and will compute it himself
+            #   2 threads in parallel:
+            #     Thread A (main program thread)
+            #         do:
+            #           get from stdin (or, on first time through the loop, from initial prompt)
+            #           break if no special command
+            #         canonicalize_human_output()  # this function correlated with format convenient for humans to output
+            #     Thread B (spawn): compute and record pass n-1's authoritative state
+            #         render_state_to_detailed_deltas()
+            #         get_detailed_deltas() query the model for a *detailed* state delta output of all NPC activity
+            #           since last call to this function.
+            #           (this is all Relationship/Belief/CharacterState info.  it is a careful computation.  Note it can
+            #            even include the prose of all the NPCs since the last human call)
+            #         record_authoritative_history()
+            #         if context_compression_required()
+            #           compress_context()
+            #     Wait for thread B to complete and terminate it
 
         #else:
-        # get next contribution from one of the LLM participants (possibly LLM's 'silent'
-        # 'narrator' contribution).  This is intent only, so it is done wiht low temp
-        # and should be brief.  this is serialized w.r.t. further steps in the loop
-        # and so contributes directly to user-perceived TTFT.
+            # note we could be computing quick deltas from human or NPC output
+            # render_state_to_quick_deltas
+            # get_quick_deltas().  (later overwrite with the detailed update that happens in parallel with human output
+            #   this is deltas that affect the chosen NPC only)
+            # record_quick_history()
+            # get_npc_intent(): get next contribution from one of the LLM participants (possibly LLM's 'silent'
+            #   'narrator' contribution).  This is intent only, so it is done with low temp
+            #   and should be brief.  this is serialized w.r.t. further steps in the loop
+            #   and so contributes directly to user-perceived TTFT.
             # swap_kv_cache()  # save latest flowery KV cache to system RAM; install KV cache appropriate for intent
             # for intent_iteration 0..max_before_giving_up
                 # render_state_to_query_intent(speaker, global_state, intent_iteration)
@@ -117,38 +131,14 @@ def main():
                 # scrub(canonicalized_reply, policies).  both quick python checks and quick yes/no call to LLM
                 # either break intent_iteration loop or repeat loop to try again.  handle "too many attempts" somehow.
 
-        # call the LLM with normal temp to convert the intent to flowery
-        # prose.  this takes some time and we stream directly to the user.
-        # it is tempting to do one more scrub after this point but 1. we have
-        # already scrubbed the intent, and a deviation from intent at this point
-        # is unlikely, and is properly fixed by changing the prompt we give at
-        # this point.  also, 2. this is a long-latency operation and we don't
-        # want to put it all into TTFT.
-        # if !speaker_is_human() :
-        # render_state_to_query_dialog()
-        # do:
-        #   llama.eval()
-        #   echo to terminal
-        #   break if no more output
+            # call the LLM with normal temp to convert the intent to flowery
+            # prose.  this takes some time and we stream directly to the user.
+            # it is tempting to do one more scrub after this point but 1. we have
+            # already scrubbed the intent, and a deviation from intent at this point
+            # is unlikely, and is properly fixed by changing the prompt we give at
+            # this point.  also, 2. this is a long-latency operation and we don't
+            # want to put it all into TTFT.
 
-        # at this point, if the next participant is the human, s/he is busy
-        # typing and does not notice the latencies below. (Note, however, that
-        # if this turn is followed by another NPC turn the latency will appear
-        # as a delay between NPC speech items.
-        
-        # query the LLM for the CharacterState updates for the Speaker, and the
-        # Relationship/Belief matrix deltas for all [i][j].  We do this for NPCs
-        # and humans.
-        # swap_kv_cache()  # save char speech KV cache; put in state update KV cache
-        # render_state_to_query_state_updates()
-        # llama.eval # get all output; no need to stream, as further steps need the whole thing
-
-        # update the game state
-        # update_state()
-
-        # check if we need to do a summarization (too close to max context),
-        # and if so, do it.  Use Narrator's voice
-        
         # end of loop.  iterate.
 
         # (**) Notes on the undo feature:  this would ordinarily be used to undo the
@@ -157,6 +147,9 @@ def main():
         # times before the human gets a chance to enter this command.
         # Note 2: my use of "intent" aligns with what others refer to as "thought block".
         # I think they basically serve the same purpose.
+
+        # some topics not to forget: post-mortem reveal (how much is under user control).
+        # ability to go back to any point in time (undo actually does this).
         
         break  # so the loop won't keep doing nothing while it's just comments
         # note to self: break call to LLM into intent and then prose for many reasons:
@@ -171,6 +164,20 @@ def main():
         # not everything will come through in the prose.  especially if the intent
         # is to lie.  Also, look for too many consecutive intents.  even if the
         # prose is different each time this will feel dull.
+
+        # more notes: if we have "presence pools" instead of just IsPresent, meaning "with
+        # the human", we open up possibilities of NPCs cooperating out of hearing of
+        # the player, which would be pretty cool.
+
+        # more notes: user commands:
+            #           case /quit: quit the loop; end game
+            #           case /temperature: change temp
+            #           case /undo: un-commit the last update to global state.  see notes below (**)
+            #           case /save
+            #           case /load
+            #           case /reveal (to end game or cheat)
+            #           case maybe someday: in-game edits of game state (god mode, debugging/profiling/optimizing)
+            #           default break do loop; exit with user input to go into history as verbatim speech
     while True:
         # 1. Generate response
 
