@@ -169,6 +169,25 @@ def main():
         # the human", we open up possibilities of NPCs cooperating out of hearing of
         # the player, which would be pretty cool.
 
+        # note: on pass n through the loop, authoritative_turn contains the last turn
+        # number whose detailed prose was used in calculating the ongoing Relationships,
+        # Beliefs, and CharacterState data (as opposed to all turns except the prior
+        # one that have had their 'intent' block referenced).  Every NPC turn we update
+        # with n-1's state, and every human turn we do an update going back to
+        # authoritative_turn+1 up to and including n-1, compute more reliable state,
+        # compare with what we had just for checking if approximate state is wrong, and
+        # overwriting the approximate state.
+        # initial state: first pass we force selection of human, and
+
+        # OH, wait.... the human input must be taken in full before the NPCs play...
+        # NPC after human: full update based on full human input
+        # NPC after NPC: quick update based on intent of n-1
+        # human after NPC: here, instead of just updating with intent of n-1, we
+        #   do a full update going back to the last time human-after-npc did this
+        # human after human: this doesn't really happen.  we should do a full update.
+
+        # note the human parts of the state really should be maintained by the human.
+
         # more notes: user commands:
             #           case /quit: quit the loop; end game
             #           case /temperature: change temp
@@ -316,4 +335,17 @@ def extract_state_update(text):
 
 if __name__ == "__main__":
     main()
+
+# some notes on modern best practices:
+# 1. hints everywhere
+# 2. @dataclass
+#    sub-point: immutable where possible (frozen=True)
+# 3. pyright in strict mode (strict = true)
+# 4. ruff/black
+# 5. @property (sparingly, for validation); _underscore convention for encapsulation
+# best approximation to encapsulation seems to be just to use underscores.
+
+# sudo apt install mypy: static typecheck
+# ... pylint: really thorough; people complain that it complains too much
+# ... flake8
 
