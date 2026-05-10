@@ -1,28 +1,51 @@
 import sys
 import os
 import re
+from enum import Enum, auto
+from typing import NewType, TypeDict, NamedTuple
 from llama_cpp import Llama, ChatCompletionRequestMessage
 from chatloop import parser
 from chatloop.State import State
 
-UPDATE_RE = re.compile(
-    r'^\s*([A-Za-z0-9_]+)\.(\w+)(?:\[(\w+)\])?\s*=\s*(.+)$'
-)
+
+class CharacterRefType:
+    HUMAN = auto()
+    NARRATOR = auto()
+    SILENT = auto()
+    NPC = auto()
+
+class CharacterRef:
+    """
+    An internal reference that is one-to-one with characters tracked in the roleplay.
+    This serves as a lookup in to the Characters dict of lists of characters.
+    idx is zero-based.
+    """
+    role: CharacterRefType
+    idx: int
+
+class WantsToTalk:
+    {
+        
+    }
+
+UPDATE_RE = re.compile(r"^\s*([A-Za-z0-9_]+)\.(\w+)(?:\[(\w+)\])?\s*=\s*(.+)$")
 
 MODEL_ROOT = "/mnt/models_nvme/models"
 
-#MODEL_PATH=f"{MODEL_ROOT}/Mistral-Small-24B-ArliAI-RPMax-v1.4.Q5_K_M.gguf"
-#MODEL_PATH=f"{MODEL_ROOT}/dolphin-2.6-mistral-7b.Q6_K.gguf"
-#MODEL_PATH=f"{MODEL_ROOT}/Qwen2.5-32b-RP-Ink-Q4_K_M.gguf"
-#MODEL_PATH=f"{MODEL_ROOT}/Mistral-rp-24b-karcher.i1-Q5_K_M.gguf"  # does not work: needs newer version of llama-cpp-python
-#MODEL_PATH=f"{MODEL_ROOT}/L3.2-Rogue-Creative-Instruct-Uncensored-Abliterated-7B-D_AU-IQ4_XS.gguf"
-MODEL_PATH=f"{MODEL_ROOT}/cognitivecomputations_Dolphin-Mistral-24B-Venice-Edition-Q4_K_M.gguf"
+# MODEL_PATH=f"{MODEL_ROOT}/Mistral-Small-24B-ArliAI-RPMax-v1.4.Q5_K_M.gguf"
+# MODEL_PATH=f"{MODEL_ROOT}/dolphin-2.6-mistral-7b.Q6_K.gguf"
+# MODEL_PATH=f"{MODEL_ROOT}/Qwen2.5-32b-RP-Ink-Q4_K_M.gguf"
+# MODEL_PATH=f"{MODEL_ROOT}/Mistral-rp-24b-karcher.i1-Q5_K_M.gguf"
+# MODEL_PATH=f"{MODEL_ROOT}/L3.2-Rogue-Creative-Instruct-Uncensored-Abliterated-7B-D_AU-IQ4_XS.gguf"
+MODEL_PATH = (
+    f"{MODEL_ROOT}/cognitivecomputations_Dolphin-Mistral-24B-Venice-Edition-Q4_K_M.gguf"
+)
 system_behavior_prompt_file = "./sys_behavior.txt"
 system_formatting_prompt_file = "./sys_formatting.txt"
 initial_prompt_file = "../init.txt"
-temperature=0  # for debug
-context_size=24578
-ngl=24
+temperature = 0  # for debug
+context_size = 24578
+ngl = 24
 
 # this works in conjunction with Llama(verbose=False) to suppress messages
 # into stdout/stderr from within the library itself
@@ -41,20 +64,73 @@ class SuppressStderr:
         os.close(self.devnull)
         os.close(self.saved_stderr_fd)
 
+
+class Character:
+
+    IsHuman: bool
+    IsNarrator: bool
+    IsNpc: bool
+    PresenceGroup: int
+    Talkativeness: int
+    Boldness: int
+    Friendliness: int
+    Volatility: float  # used for next_speaker calculation
+    
+
+class SpeakerArbiter:
+
+    # maintain a dict that maps CharacterRef to priority (float)
+    
+    def __init__(self, character_list: [Character]) -> None:
+        self._weights : dict[CharacterRef, float] = {}
+
+        # add all characters
+
+        _renormalize()
+        
+    def choose(randomness:float = 1.0) -> CharacterRef :
+        """
+        Determine who will speak next.
+        """
+        # add a bit of randomness to each character, according to that character's
+        # Volatility
+
+        # pick the largest as the next speaker
+
+        # renormalize the list
+
+    def apply_recenty_penalty(character: CharacterRef) -> None:
+        """
+        Lower the priority of the given speaker to account for the fact that
+        he or she has recently spoken.  The amount to lower is equal to the
+        number of characters at this point in time.  This number doesn not
+        include the silent speakers or narrators
+        """
+
+    def adjust(character: CharacterRef, adjustment: float)->None:
+
+    def add_new_character(new_character: CharacterRef, initial_priority: float)-> None:
+        # TODO(ben) how to handle adding/removing a character later in the chat?
+        # else use pseudorandom selection
+    
+
+    def _renormalize()->None:
+
+
 def main():
     # 1. SETUP: read prompts; Initialize the model
 
-    # TODO: we may want to make some of this machine-generated, like
+    # TODO(ben): we may want to make some of this machine-generated, like
     # character cards.  we may want to pass a list of percentages
     # into the LLM to create a distilled personality
 
-    with open(system_behavior_prompt_file, 'r') as f:
+    with open(system_behavior_prompt_file, "r") as f:
         system_behavior_prompt = " ".join(f.read().splitlines())
 
-    with open(system_formatting_prompt_file, 'r') as f:
+    with open(system_formatting_prompt_file, "r") as f:
         system_formatting_prompt = " ".join(f.read().splitlines())
 
-    with open(initial_prompt_file, 'r') as f:
+    with open(initial_prompt_file, "r") as f:
         initial_prompt = " ".join(f.read().splitlines())
 
     state = State()
@@ -77,67 +153,87 @@ def main():
     #          #no_kv_offload=False,
     #      )
 
-
     print("--- Roleplay Engine loop starting ---")
 
     messages = [
-        {"role": "system", "content": system_behavior_prompt + system_formatting_prompt},
-        {"role": "user", "content": initial_prompt}
+        {
+            "role": "system",
+            "content": system_behavior_prompt + system_formatting_prompt,
+        },
+        {"role": "user", "content": initial_prompt},
     ]
 
     # new loop:
+
+    # TODO(ben) set up inital characters
+    
+    Turn = 0
+
+    speakers = SpeakerArbiter(character_list)
+
+    # at the start of the game, we set initial conditions that will lead to
+    # a clean start of the turn sequence: first human speaker goes first as
+    # a mechanism of establishing the initial prompt, and the narrator goes
+    # next to set the scene for the human character(s), who may not know the
+    # initial prompt.
+
+    # TODO(ben) check that at least one human and at least one narrator
+    # exist, and do something appropriate if not
+    
+    speakers.adjust((Human, 0), 100)
+    speakers.adjust((Narrator, 0), 50)
+    
     while True:
 
-        # choose_next_speaker().  # On first iteration it will be forced to first human.
-        # need to force same speaker as created any dialog that is popped when the user uses that feature.
+        CurrentSpeaker = SpeakerArbiter.choose()
 
         # at the top of the loop we have n-1's unprocessed human or NPC output.
         # record what happens for HHMMH to cover all transitions.
-        
-        #if speaker_is_human(current_speaker):
-            #   # human never needs to compute n-1's deltas b/c human sees the flowery speech and will compute it himself
-            #   2 threads in parallel:
-            #     Thread A (main program thread)
-            #         do:
-            #           get from stdin (or, on first time through the loop, from initial prompt)
-            #           break if no special command
-            #         canonicalize_human_output()  # this function correlated with format convenient for humans to output
-            #     Thread B (spawn): compute and record pass n-1's authoritative state
-            #         render_state_to_detailed_deltas()
-            #         get_detailed_deltas() query the model for a *detailed* state delta output of all NPC activity
-            #           since last call to this function.
-            #           (this is all Relationship/Belief/CharacterState info.  it is a careful computation.  Note it can
-            #            even include the prose of all the NPCs since the last human call)
-            #         record_authoritative_history()
-            #         if context_compression_required()
-            #           compress_context()
-            #     Wait for thread B to complete and terminate it
 
-        #else:
-            # note we could be computing quick deltas from human or NPC output
-            # render_state_to_quick_deltas
-            # get_quick_deltas().  (later overwrite with the detailed update that happens in parallel with human output
-            #   this is deltas that affect the chosen NPC only)
-            # record_quick_history()
-            # get_npc_intent(): get next contribution from one of the LLM participants (possibly LLM's 'silent'
-            #   'narrator' contribution).  This is intent only, so it is done with low temp
-            #   and should be brief.  this is serialized w.r.t. further steps in the loop
-            #   and so contributes directly to user-perceived TTFT.
-            # swap_kv_cache()  # save latest flowery KV cache to system RAM; install KV cache appropriate for intent
-            # for intent_iteration 0..max_before_giving_up
-                # render_state_to_query_intent(speaker, global_state, intent_iteration)
-                # llama.eval():  # accumulate the entire intent output
-                # canonicalize_llm_output # this function correlated with format convenient for llms to output
-                # scrub(canonicalized_reply, policies).  both quick python checks and quick yes/no call to LLM
-                # either break intent_iteration loop or repeat loop to try again.  handle "too many attempts" somehow.
+        # if speaker_is_human(current_speaker):
+        #   # human never needs to compute n-1's deltas b/c human sees the flowery speech and will compute it himself
+        #   2 threads in parallel:
+        #     Thread A (main program thread)
+        #         do:
+        #           get from stdin (or, on first time through the loop, from initial prompt)
+        #           break if no special command
+        #         canonicalize_human_output()  # this function correlated with format convenient for humans to output
+        #     Thread B (spawn): compute and record pass n-1's authoritative state
+        #         render_state_to_detailed_deltas()
+        #         get_detailed_deltas() query the model for a *detailed* state delta output of all NPC activity
+        #           since last call to this function.
+        #           (this is all Relationship/Belief/CharacterState info.  it is a careful computation.  Note it can
+        #            even include the prose of all the NPCs since the last human call)
+        #         record_authoritative_history()
+        #         if context_compression_required()
+        #           compress_context()
+        #     Wait for thread B to complete and terminate it
 
-            # call the LLM with normal temp to convert the intent to flowery
-            # prose.  this takes some time and we stream directly to the user.
-            # it is tempting to do one more scrub after this point but 1. we have
-            # already scrubbed the intent, and a deviation from intent at this point
-            # is unlikely, and is properly fixed by changing the prompt we give at
-            # this point.  also, 2. this is a long-latency operation and we don't
-            # want to put it all into TTFT.
+        # else:
+        # note we could be computing quick deltas from human or NPC output
+        # render_state_to_quick_deltas
+        # get_quick_deltas().  (later overwrite with the detailed update that happens in parallel with human output
+        #   this is deltas that affect the chosen NPC only)
+        # record_quick_history()
+        # get_npc_intent(): get next contribution from one of the LLM participants (possibly LLM's 'silent'
+        #   'narrator' contribution).  This is intent only, so it is done with low temp
+        #   and should be brief.  this is serialized w.r.t. further steps in the loop
+        #   and so contributes directly to user-perceived TTFT.
+        # swap_kv_cache()  # save latest flowery KV cache to system RAM; install KV cache appropriate for intent
+        # for intent_iteration 0..max_before_giving_up
+        # render_state_to_query_intent(speaker, global_state, intent_iteration)
+        # llama.eval():  # accumulate the entire intent output
+        # canonicalize_llm_output # this function correlated with format convenient for llms to output
+        # scrub(canonicalized_reply, policies).  both quick python checks and quick yes/no call to LLM
+        # either break intent_iteration loop or repeat loop to try again.  handle "too many attempts" somehow.
+
+        # call the LLM with normal temp to convert the intent to flowery
+        # prose.  this takes some time and we stream directly to the user.
+        # it is tempting to do one more scrub after this point but 1. we have
+        # already scrubbed the intent, and a deviation from intent at this point
+        # is unlikely, and is properly fixed by changing the prompt we give at
+        # this point.  also, 2. this is a long-latency operation and we don't
+        # want to put it all into TTFT.
 
         # end of loop.  iterate.
 
@@ -150,7 +246,7 @@ def main():
 
         # some topics not to forget: post-mortem reveal (how much is under user control).
         # ability to go back to any point in time (undo actually does this).
-        
+
         break  # so the loop won't keep doing nothing while it's just comments
         # note to self: break call to LLM into intent and then prose for many reasons:
         # 1. intent is quick and we can start the discriminator on that instead of the
@@ -189,34 +285,34 @@ def main():
         # note the human parts of the state really should be maintained by the human.
 
         # more notes: user commands:
-            #           case /quit: quit the loop; end game
-            #           case /temperature: change temp
-            #           case /undo: un-commit the last update to global state.  see notes below (**)
-            #           case /save
-            #           case /load
-            #           case /reveal (to end game or cheat)
-            #           case maybe someday: in-game edits of game state (god mode, debugging/profiling/optimizing)
-            #           default break do loop; exit with user input to go into history as verbatim speech
+        #           case /quit: quit the loop; end game
+        #           case /temperature: change temp
+        #           case /undo: un-commit the last update to global state.  see notes below (**)
+        #           case /save
+        #           case /load
+        #           case /reveal (to end game or cheat)
+        #           case maybe someday: in-game edits of game state (god mode, debugging/profiling/optimizing)
+        #           default break do loop; exit with user input to go into history as verbatim speech
     while True:
         # 1. Generate response
 
-        print("---------about to call create_chat_completion() with the following:---------")
+        print(
+            "---------about to call create_chat_completion() with the following:---------"
+        )
         print(messages)
-        print("----------------------------------------------------------------------------")
+        print(
+            "----------------------------------------------------------------------------"
+        )
 
         # we would like to have this hook for debug, but it is unavailable in
         # our version of the library
-        #print("----and here is the formatted prompt that will be passed to the model:------")
-        #print(llm._format_chat_prompt(messages))
-        #print("----------------------------------------------------------------------------")
+        # print("----and here is the formatted prompt that will be passed to the model:------")
+        # print(llm._format_chat_prompt(messages))
+        # print("----------------------------------------------------------------------------")
 
-    
         full_reply = ""
         for chunk in llm.create_chat_completion(
-                stream=True,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=500
+            stream=True, messages=messages, temperature=temperature, max_tokens=500
         ):
 
             delta = chunk["choices"][0]["delta"]
@@ -228,18 +324,18 @@ def main():
                 full_reply += text
 
             if finish_reason in ["length"]:
-                # TODO: we want to check for runaway text, and if that's not the
+                # TODO(ben): we want to check for runaway text, and if that's not the
                 # case, continue fetching text.  But this doesn't seem to work:
                 # the next chunk comes back NULL and terminates the for loop
                 print("\ngot 'length' termination; continue fetching response text\n")
             if finish_reason in ["stop"]:
-                # TODO: handle these cases better.  for now, break the loop
+                # TODO(ben): handle these cases better.  for now, break the loop
                 break
-        
+
         print()
 
         state = parser.parse_llm_output(full_reply, state)
-    
+
         # Parse structured updates
         # if the model sent a state update block, and we can unambiguously understand
         # it, and it passes various extra sanity tests, commit it to RP state.  this
@@ -257,20 +353,21 @@ def main():
         # /discard: discard model output and re-query
         # /save
         # /load
-        # TODO: also, discard last user input, if that's head of queue
+        # TODO(ben): also, discard last user input, if that's head of queue
 
         # 4. Append to history
         state.narration.append("USER: " + user_input)
         state.transcript.append(full_reply)
-    
+
         messages.append({"role": "assistant", "content": full_reply})
         messages.append({"role": "user", "content": user_input})
 
+
 # end of main()
 
-# TODO: here is one of the two critical pieces.  we need a good function to
+# TODO(ben): here is one of the two critical pieces.  we need a good function to
 # create the 'messages' to send to the model from the state.
-def render_message_list(state: State) -> [ChatCompletionRequestMessage] :
+def render_message_list(state: State) -> [ChatCompletionRequestMessage]:
     lines = []
 
     # 1. Recent transcript (most important)
@@ -284,7 +381,8 @@ def render_message_list(state: State) -> [ChatCompletionRequestMessage] :
 
     return "\n".join(lines)
 
-# TODO: here is the other critical piece.  the goal here is to extract the
+
+# TODO(ben): here is the other critical piece.  the goal here is to extract the
 # model's idea of updated state, and SANITIZE IT before committing.  better
 # to be conservative here.  if we skip an update, so be it.
 
@@ -306,13 +404,16 @@ def parse_state_update(block, state):
         char, field, subkey, value = m.groups()
         char = char.upper()
 
-        c = state.characters.setdefault(char, {
-            "speech": [],
-            "thoughts": [],
-            "goal": None,
-            "mood": "neutral",
-            "relationships": {}
-        })
+        c = state.characters.setdefault(
+            char,
+            {
+                "speech": [],
+                "thoughts": [],
+                "goal": None,
+                "mood": "neutral",
+                "relationships": {},
+            },
+        )
 
         value = value.strip()
 
@@ -323,6 +424,7 @@ def parse_state_update(block, state):
 
     return state
 
+
 def extract_state_update(text):
     start = text.find("<STATE_UPDATE>")
     end = text.find("</STATE_UPDATE>")
@@ -330,7 +432,7 @@ def extract_state_update(text):
     if start == -1 or end == -1:
         return None
 
-    return text[start + len("<STATE_UPDATE>"):end].strip()
+    return text[start + len("<STATE_UPDATE>") : end].strip()
 
 
 if __name__ == "__main__":
@@ -348,4 +450,41 @@ if __name__ == "__main__":
 # sudo apt install mypy: static typecheck
 # ... pylint: really thorough; people complain that it complains too much
 # ... flake8
+# The Immutable Types
+#   Numbers: int, float, complex, bool (Yes, True and False are just special integers).
+#   Sequences: str, tuple, range, and bytes.
+#   Sets: frozenset (This is the immutable version of a set).
+#   Special: NoneType (None is a singleton and never changes).
 
+# type CharacterRef = tuple[int, int]
+# or even 'from typing import NewType' and use NewType instead of type above.  stricter.
+# to ensure dictionaries always have specific keys:
+#    from typing import TypedDict
+#    
+#    class UserProfile(TypedDict):
+#        username: str
+#        age: int
+#        is_active: bool
+#    
+#    # The type checker will now ensure you include these specific keys
+#    user: UserProfile = {
+#        "username": "coder123",
+#        "age": 25,
+#        "is_active": True
+#    }
+
+# note on packaging: if the user doesn't have the right C compiler for llama-cpp-python, they
+# will get some cryptic error message about "Failed building wheel".  solution is to forewarn
+# the user and point to a pre-build wheel
+#
+# if mypy complains that a third-party library like llama-cpp-python doesn't specify types,
+# we should create "stubs" (.pyi files).  it works something like this:
+# careate a 'typings' directory in the project
+# in that dir create a file llama_cpp.pyi, and add the type signatures needed, like:
+# llama_cpp.pyi
+#    class Llama:
+#        def __init__(self, model_path: str, n_ctx: int = 512): ...
+#        def __call__(self, prompt: str) -> dict: ...
+# then point mypy to it:
+#    [tool.mypy]
+#    mypy_path = "typings"
