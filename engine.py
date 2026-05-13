@@ -2,31 +2,63 @@ import sys
 import os
 import re
 from enum import Enum, auto
-from typing import NewType, TypeDict, NamedTuple
+from typing import NewType, TypeDict, NamedTuple, DefaultDict, Optional
 from llama_cpp import Llama, ChatCompletionRequestMessage
 from chatloop import parser
 from chatloop.State import State
+from collections import defaultdict
 
-
-class CharacterRefType:
+class CharacterType(Enum):
     HUMAN = auto()
     NARRATOR = auto()
     SILENT = auto()
     NPC = auto()
 
-class CharacterRef:
-    """
-    An internal reference that is one-to-one with characters tracked in the roleplay.
-    This serves as a lookup in to the Characters dict of lists of characters.
-    idx is zero-based.
-    """
-    role: CharacterRefType
-    idx: int
 
-class WantsToTalk:
-    {
+@dataclass
+class Relationship:
+    love: int
+    respect: int
+    fear: int
+    trust: int
+
+@dataclass(frozen=True)
+class Character:
+    idx: int            # unique identifying index.  bookkeeping only.
+    character_type : CharacterType
+    name: str
+    description: str
+    presence_group: int
+    talkativeness: int
+    boldness: int
+    friendliness: int
+    volatility: float   # used for next_speaker calculation
+
+class Roster:
+    """
+    """
+    roster: list[Character]
+    
+    def __init(self)__ -> None:
+        self.roster = None
+
+    def add(new_character_type: CharacterType, new_character: Character) -> int:
+
+# TODO(ben) need beliefs matrix
+
+
         
-    }
+@dataclass
+class TurnState:
+    speaker_type : CharacterType
+    speaker : int
+    intent : str    # short; used for gatekeeping
+    dialog : str    # long flowery speech to be seen by user
+    importance : int   # used by compactor; usualluy denotes large change in state
+    goal_short_term : str
+    goal_long_term : str
+    # below here, things start to be specific to the scenario
+    
 
 UPDATE_RE = re.compile(r"^\s*([A-Za-z0-9_]+)\.(\w+)(?:\[(\w+)\])?\s*=\s*(.+)$")
 
@@ -65,30 +97,22 @@ class SuppressStderr:
         os.close(self.saved_stderr_fd)
 
 
-class Character:
-
-    IsHuman: bool
-    IsNarrator: bool
-    IsNpc: bool
-    PresenceGroup: int
-    Talkativeness: int
-    Boldness: int
-    Friendliness: int
-    Volatility: float  # used for next_speaker calculation
-    
 
 class SpeakerArbiter:
 
-    # maintain a dict that maps CharacterRef to priority (float)
+    # maintain a List that maps a character index to priority (float)
+    _weights : DefaultDict[int, DefaultDict[int, Optional[float]]] = \
+        defaultdict(lambda : defaultdict(lambda : None))
     
-    def __init__(self, character_list: [Character]) -> None:
-        self._weights : dict[CharacterRef, float] = {}
+    def __init__(self) -> None:
+        self.my_data: DefaultDict[int, DefaultDict[int, Optional[float]]] = \
+            defaultdict(lambda: defaultdict(lambda: None))           
 
         # add all characters
 
         _renormalize()
         
-    def choose(randomness:float = 1.0) -> CharacterRef :
+    def choose(randomness:float = 1.0) -> int :
         """
         Determine who will speak next.
         """
@@ -99,7 +123,7 @@ class SpeakerArbiter:
 
         # renormalize the list
 
-    def apply_recenty_penalty(character: CharacterRef) -> None:
+    def apply_recenty_penalty(character: int) -> None:
         """
         Lower the priority of the given speaker to account for the fact that
         he or she has recently spoken.  The amount to lower is equal to the
@@ -107,15 +131,19 @@ class SpeakerArbiter:
         include the silent speakers or narrators
         """
 
-    def adjust(character: CharacterRef, adjustment: float)->None:
+    def adjust(character: int, adjustment: float)->None:
 
-    def add_new_character(new_character: CharacterRef, initial_priority: float)-> None:
+    def add_new_character(new_character: int, initial_priority: float)-> None:
         # TODO(ben) how to handle adding/removing a character later in the chat?
         # else use pseudorandom selection
-    
 
     def _renormalize()->None:
 
+# note to self: i don't know if i want the roster to be simply a dict or a class.
+# the argument for class is that if someday we want to support adding a character
+# during gameplay, we need to remember to do other things like extend the
+# SpeakerArbiter, the Relationship matrix, etc.  Maybe we'll never allow this
+# functionality?
 
 def main():
     # 1. SETUP: read prompts; Initialize the model
@@ -135,6 +163,17 @@ def main():
 
     state = State()
 
+    # note to self: i chose regular dict for this to prioritize crash over
+    # silent wrong execution if we access a missing entry
+    RelationshipMatrix: dict[dict[Relationship]]
+
+    def add_relationship_to_matrix(new_character: int,
+                                   new_character_towards_others: dict[int, Relationship],
+                                   others_towards_new_character: dict[int, Relationship]) -> None:
+        # add new row
+
+        # add column by adding to all pre-existing entries
+    
     print("Initializing Llama")
     llm = Llama(
         verbose=False,  # to avoid spewage of library internal info into output stream
@@ -167,8 +206,8 @@ def main():
 
     # TODO(ben) set up inital characters
     
-    Turn = 0
-
+    game_turn = 0
+    state_history : [State] = []
     speakers = SpeakerArbiter(character_list)
 
     # at the start of the game, we set initial conditions that will lead to
@@ -178,38 +217,66 @@ def main():
     # initial prompt.
 
     # TODO(ben) check that at least one human and at least one narrator
-    # exist, and do something appropriate if not
+    # exist, and do something appropriate if not.  this is hacky; what is
+    # the right way to do this?
     
     speakers.adjust((Human, 0), 100)
     speakers.adjust((Narrator, 0), 50)
+
+    current_speaker : int
     
     while True:
 
-        CurrentSpeaker = SpeakerArbiter.choose()
+        current_speaker = speakers.choose()
+
+        # for now, we always take the arbiter's choice
+        speakers.apply_recency_penalty(current_speaker)
 
         # at the top of the loop we have n-1's unprocessed human or NPC output.
         # record what happens for HHMMH to cover all transitions.
 
-        # if speaker_is_human(current_speaker):
-        #   # human never needs to compute n-1's deltas b/c human sees the flowery speech and will compute it himself
-        #   2 threads in parallel:
-        #     Thread A (main program thread)
-        #         do:
-        #           get from stdin (or, on first time through the loop, from initial prompt)
-        #           break if no special command
-        #         canonicalize_human_output()  # this function correlated with format convenient for humans to output
-        #     Thread B (spawn): compute and record pass n-1's authoritative state
-        #         render_state_to_detailed_deltas()
-        #         get_detailed_deltas() query the model for a *detailed* state delta output of all NPC activity
-        #           since last call to this function.
-        #           (this is all Relationship/Belief/CharacterState info.  it is a careful computation.  Note it can
-        #            even include the prose of all the NPCs since the last human call)
-        #         record_authoritative_history()
-        #         if context_compression_required()
-        #           compress_context()
-        #     Wait for thread B to complete and terminate it
+        if current_speaker.character_type == HUMAN :
+            human_output : str
+            # this will become parallel thread A, though today we serialize
+            # get human's output
+            if game_turn == 0:
+                human_output = intitial_prompt
+                human_dialog = process_slash_commands(human_output)
 
-        # else:
+                # at this point we have human dialog from interactive turn
+
+            else :
+                # TODO(ben) someday support input from network socket, etc.
+                while True :
+                    human_output = input(f"[{current_speaker.name}]: ")
+                    if len(human_output) == 0 :
+                        break  # totally blank line is legitimate dialog
+                    human_dialog = process_shash_commands(human_output)
+                    if len(human_dialog) > 0 :
+                        break  # this is a line of dialog b/c text left after processing slash commands
+
+                # at this point we have human dialog from interactive turn
+            # at this point we have human dialog from interactive or initial turn
+            
+            canonicalized_human_output = canonicalize_human_input(human_output)
+
+            # this will become parallel thread B, though today we serialize
+            # while human is outputting (our input), process prior turn into state
+
+            # for first turn there is no n-1 intent/prose to update into state
+            # if the narrator spoke last there is nothing further to render
+            if game_turn>0 and state_history[game_turn].character_type != NARRATOR:
+                delta_query : str = render_state_to_delta_query() # get prompt to use to ask for state deltas
+                get_detailed_deltas()  # actually run the prompt.
+                parse_deltas()  # into CharacterState, Relationship, Belief
+                record_authoratative_history()
+
+            if context_compression_required() :
+                compress_context()
+                
+            # someday when we parallelize A and B: wait for both threads to finish
+
+        else : # else not human player turn
         # note we could be computing quick deltas from human or NPC output
         # render_state_to_quick_deltas
         # get_quick_deltas().  (later overwrite with the detailed update that happens in parallel with human output
@@ -456,7 +523,7 @@ if __name__ == "__main__":
 #   Sets: frozenset (This is the immutable version of a set).
 #   Special: NoneType (None is a singleton and never changes).
 
-# type CharacterRef = tuple[int, int]
+# type CharacterRef = tuple[int, int]  # we decided not to use this!  it's an int now
 # or even 'from typing import NewType' and use NewType instead of type above.  stricter.
 # to ensure dictionaries always have specific keys:
 #    from typing import TypedDict
