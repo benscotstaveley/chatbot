@@ -1,7 +1,7 @@
 from enum import Enum
 
 class SpeakerAgentType(Enum):
-    LLM
+    NPC
     HUMAN
     SILENT
     NARRATOR

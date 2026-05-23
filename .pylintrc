@@ -1,0 +1,25 @@
+[MASTER]
+# Ignore specific files or directories (like migrations)
+ignore=venv,tests
+
+[MESSAGES CONTROL]
+# C0114: Missing module docstring
+# C0115: Missing class docstring
+# C0116: Missing function docstring
+# R0903: Too few public methods (annoying for simple data classes)
+disable=
+    C0114,
+    C0115,
+    C0116,
+    R0903
+
+[FORMAT]
+# Match the industry standard (Black/Ruff use 88, Pylint default is 100)
+max-line-length=100
+
+[BASIC]
+# If you prefer camelCase or other styles, you'd define them here.
+# By default, it enforces snake_case.
+
+# Names that are always allowed, regardless of the regex
+good-names=i,j,k,ex,Run,_,f,db

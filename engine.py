@@ -224,6 +224,7 @@ def main():
     speakers.adjust((Narrator, 0), 50)
 
     current_speaker : int
+
     
     while True:
 
@@ -236,6 +237,13 @@ def main():
         # record what happens for HHMMH to cover all transitions.
 
         if current_speaker.character_type == HUMAN :
+
+            # we may or may not have an intent (if n-1 was LLM we do; else (human or none) we do not)
+            # we may or may not have the flowery prose; if human or LLM we do; if NONE we do not
+            # we need to compute all state updates
+            # we need to check the state updates
+            # we need to apply the state updates
+            
             human_output : str
             # this will become parallel thread A, though today we serialize
             # get human's output
@@ -265,10 +273,20 @@ def main():
 
             # for first turn there is no n-1 intent/prose to update into state
             # if the narrator spoke last there is nothing further to render
-            if game_turn>0 and state_history[game_turn].character_type != NARRATOR:
-                delta_query : str = render_state_to_delta_query() # get prompt to use to ask for state deltas
-                get_detailed_deltas()  # actually run the prompt.
-                parse_deltas()  # into CharacterState, Relationship, Belief
+            if game_turn == 0:
+
+                # special-case first turn.  just as we got the first turn's speech from a
+                # text file input, so we get the first turn's state updates (the initial
+                # state treated as deltas applied to a zero state)
+                
+            else if game_turn>0 and state_history[game_turn].character_type != NARRATOR:
+                while True :
+                    delta_query : str = render_state_to_delta_query() # get prompt to use to ask for state deltas
+                    get_detailed_deltas()  # actually run the prompt.
+                    parse_deltas()  # into CharacterState, Relationship, Belief
+                    if successful_parse or give_up:
+                        break
+                    
                 record_authoratative_history()
 
             if context_compression_required() :
@@ -277,15 +295,29 @@ def main():
             # someday when we parallelize A and B: wait for both threads to finish
 
         else : # else not human player turn
+
+            # first turn goes to human, to load initial prompt and state.  we
+            # check here because we want to assume there was an n-1
+            assert turn != 0
+
+            # we have the flowery prose
+            # there may or may not be intent (present iff prior was LLM)
+            # we do not have n-1's state deltas
+            # we have not recorded n-1's latest state.
+            # we must compute n-1's state deltas from the flowery prose
+            # we must then compute n's starting state
+            # then we generate intent
+            
+            # get a brief description of what the llm wants to do.  low-temp query.
+            get_npc_intent()
+
+
         # note we could be computing quick deltas from human or NPC output
         # render_state_to_quick_deltas
         # get_quick_deltas().  (later overwrite with the detailed update that happens in parallel with human output
         #   this is deltas that affect the chosen NPC only)
         # record_quick_history()
-        # get_npc_intent(): get next contribution from one of the LLM participants (possibly LLM's 'silent'
-        #   'narrator' contribution).  This is intent only, so it is done with low temp
-        #   and should be brief.  this is serialized w.r.t. further steps in the loop
-        #   and so contributes directly to user-perceived TTFT.
+        # get_npc_intent(): 
         # swap_kv_cache()  # save latest flowery KV cache to system RAM; install KV cache appropriate for intent
         # for intent_iteration 0..max_before_giving_up
         # render_state_to_query_intent(speaker, global_state, intent_iteration)
@@ -431,23 +463,67 @@ def main():
 
 
 # end of main()
+from typing import List, Sequence
+#BEGIN SAMPLE CODE
+class ConversationContext:
+    def __init__(self, system_prompt_tokens: List[int]):
+        # The internal mutable ground truth for your active context window
+        self._tokens: List[int] = list(system_prompt_tokens)
+        
+        # The exact token index up to which the KV cache is currently valid
+        self._kv_cache_dirty_index: int = len(self._tokens)
 
-# TODO(ben): here is one of the two critical pieces.  we need a good function to
-# create the 'messages' to send to the model from the state.
-def render_message_list(state: State) -> [ChatCompletionRequestMessage]:
-    lines = []
+    @property
+    def tokens(self) -> Sequence[int]:
+        """Expose tokens safely as a read-only Sequence to external code."""
+        return self._tokens
 
-    # 1. Recent transcript (most important)
-    for entry in state.transcript[-20:]:
-        lines.append(entry)
+    @property
+    def kv_cache_index(self) -> int:
+        return self._kv_cache_dirty_index
 
-    # 2. Optional structured summaries
-    for name, char in state.characters.items():
-        if char.get("goal"):
-            lines.append(f"<INFO> {name} goal: {char['goal']}")
+    def append_tokens(self, new_tokens: List[int]) -> None:
+        """Appends tokens. KV cache pointer remains intact; it just needs to advance on next eval."""
+        self._tokens.extend(new_tokens)
+        # Note: Do NOT automatically advance kv_cache_index here. 
+        # It stays where it was, signaling to your LLM loop exactly where it needs to resume evaluating.
 
-    return "\n".join(lines)
+    def apply_digest(self, digest_start: int, digest_end: int, summary_tokens: List[int]) -> None:
+        """
+        Replaces a block of historical turns with a summary digest.
+        Invalidates the KV cache pointer immediately from the point of modification.
+        """
+        # In-place slice replacement
+        self._tokens[digest_start:digest_end] = summary_tokens
+        
+        # CRITICAL: Any modification to history breaks the KV cache from that point forward.
+        # The KV cache must be rewound or recalculated starting at the digest point.
+        self._kv_cache_dirty_index = min(self._kv_cache_dirty_index, digest_start)
 
+    def advance_kv_cache(self, processed_count: int) -> None:
+        """Call this after llama.eval() succeeds to sync the cache pointer."""
+        self._kv_cache_dirty_index += processed_count
+
+    def get_str(self, tokenizer) -> str:
+        """Exposes the entire current context as string for high-level APIs."""
+        return tokenizer.decode(self._tokens)
+# END SAMPLE CODE
+class Prompt :
+    final_turn_in_digest : int
+    final_turn_in_current_state : int
+    current_full_propmt : str     # includes KV-cache preamble plus new stuff at end
+    noncached_ptr : int    # index into current_full_prompt of first byte NOT in KV cache
+
+    def __init__(self):
+        final_turn_in_digest = -1
+        final_turn_in_current_state = -1
+        
+
+# this will become a method.
+# TODO: list all prompt transformatinos;
+# H: - ask for a delta for all (intents? and) spoken since last H call.  
+def render_query_for_npc_intent(state: State) -> str:
+    raise NotIMplementedError("Not Implemented")
 
 # TODO(ben): here is the other critical piece.  the goal here is to extract the
 # model's idea of updated state, and SANITIZE IT before committing.  better
@@ -501,6 +577,19 @@ def extract_state_update(text):
 
     return text[start + len("<STATE_UPDATE>") : end].strip()
 
+# get next contribution from one of the LLM participants (possibly LLM's 'silent'
+# 'narrator' contribution).  This is intent only, so it is done with low temp
+# and should be brief.  this is serialized w.r.t. further steps in the loop
+# and so contributes directly to user-perceived TTFT.
+def get_npc_intent() -> :
+
+    while True:
+        render_npc_eintent_query()
+        scrub()
+        if ok :
+            break
+        
+    
 
 if __name__ == "__main__":
     main()
@@ -555,3 +644,36 @@ if __name__ == "__main__":
 # then point mypy to it:
 #    [tool.mypy]
 #    mypy_path = "typings"
+
+
+# cases:
+
+# M->H
+# we have an intent.  the intent has been scrubbed.
+# we have the flowery prose, as this wsa streamed in n-1
+# we need to compute all state updates
+# we need to check the state updates
+# we need to apply the state updates
+
+# H->H:
+# we do not have an intent and won't have one
+# we have the flowery prose; it was input in n-1
+# we need to compute all state updates
+# we need to check the state updates
+# we need to apply the state updates
+
+
+# H->M
+# we have the complete flowry prose
+# there is not and won't be an intent
+
+# M -> M
+# we have the flowery prose
+# there is an intent
+# we need to compute all state updates
+# we need to check the state updates
+# we need to apply the state updates
+
+# at the end of every turn, whetehr human or model, we have flowery prose.  we do NOT
+# have updated state.  the human player doesn't need n-1's updated state.  model player
+# does, so we calculate that first.
