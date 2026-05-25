@@ -12,7 +12,7 @@ system_formatting_prompt_file = "/dev/null"
 initial_prompt_file = "./prompts/init.txt"
 temperature = 0  # for debug
 context_size = 4096
-ngl = 24
+ngl = 999
 
 with open(system_behavior_prompt_file, "r") as f:
     system_behavior_prompt = " ".join(f.read().splitlines())
@@ -37,7 +37,7 @@ llm = Llama(
         min_p=0.0, # float
         typical_p=1.0, # float
         temp=0.0, #float
-        repeat_penalty=1.1, #float
+        repeat_penalty=1.0, #float
         frequency_penalty=0.0, #float
         presence_penalty=0.0, #float
         tfs_z=1.0, #float
@@ -56,7 +56,7 @@ llm._sampler = llm._init_sampler(
     min_p=0.0,
     typical_p=1.0,
     temp=0.0,
-    repeat_penalty=1.1,
+    repeat_penalty=1.0,
     frequency_penalty=0.0,
     presence_penalty=0.0,
     tfs_z=1.0,
