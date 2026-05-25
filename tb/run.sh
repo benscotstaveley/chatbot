@@ -22,12 +22,20 @@ LLAMA_FLAGS="\
   --mirostat 0  \
   --mirostat-lr 0.1  \
   --mirostat-ent 5.0  \
-  --no-conversation \
   --seed 2 \
   --n-predict 200 \
+  --system-prompt-file tb/system_prompt_test.txt  \
+  --chat-template-file tb/chat_template.jinja  \
 "
 
-$LLAMA_EXE $LLAMA_FLAGS -p "The capital of France is" --verbose-prompt
+# have used these two together to skip sys prompt
+#  -f tb/test_prompt.txt \
+#  --no-conversation \
+
+$LLAMA_EXE $LLAMA_FLAGS -p "`cat prompts/init.txt`" --verbose-prompt
+
+# don't use -p if non-conversation
+# $LLAMA_EXE $LLAMA_FLAGS  --verbose-prompt
 # produces:
 # > The capital of France is
 # 

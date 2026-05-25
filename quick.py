@@ -1,13 +1,14 @@
 import sys
 from llama_cpp import Llama
 import inspect
+from jinja2 import Template
 
 max_sample_len = 200
 
 MODEL_ROOT = "/mnt/models_nvme/models"
 MODEL_PATH = (f"{MODEL_ROOT}/L3.2-Rogue-Creative-Instruct-Uncensored-Abliterated-7B-D_AU-IQ4_XS.gguf")
 
-system_behavior_prompt_file = "/dev/null"
+system_behavior_prompt_file = "tb/system_prompt_test.txt"
 system_formatting_prompt_file = "/dev/null"
 initial_prompt_file = "./prompts/init.txt"
 temperature = 0  # for debug
@@ -83,14 +84,28 @@ llm._sampler = llm._init_sampler(
 # print(inspect.signature(llm.detokenize))
 # sys.exit()
 
-prompt = system_behavior_prompt + system_formatting_prompt + initial_prompt
+# Jinja-encode the system and initial prompts
+print("jinja...")
+template_str = llm.metadata.get("tokenizer.chat_template")
+t = Template(template_str)
+rendered = t.render(
+    messages=[
+        {"role": "system", "content": system_behavior_prompt + system_formatting_prompt},
+        {"role": "user",   "content": initial_prompt}
+    ],
+    add_generation_prompt=True,
+    bos_token="<|begin_of_text|>",
+    eos_token="<|eot_id|>",
+    tools=None,
+)
+print(repr(rendered))
 
 print("tokenize...")
-tokens = llm.tokenize(prompt.encode("utf-8"))
+tokens = llm.tokenize(rendered.encode("utf-8"), add_bos=False, special=True)
 
-print("---------prompt tokens to be input to eval()----------")
+print("---------prompt tokens (system + initial user) to be input to eval()----------")
 print(repr(tokens))
-
+print(f"token count: {len(tokens)}")
 
 # prompt evaluation (prefill)
 print("prefill...")
