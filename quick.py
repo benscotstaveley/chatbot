@@ -79,6 +79,82 @@ messages = [
         {"role": "user",   "content": initial_prompt}
     ]
 
+print("-------messages------\n"+repr(messages)+"\n----------")
+rendered = t.render(
+    messages=messages,
+    add_generation_prompt=True,
+    bos_token="<|begin_of_text|>",
+    eos_token="<|eot_id|>",
+    tools=None,
+)
+#print("-------rendered prompt--------\n"+repr(rendered)+"\n-----------")
+
+tokens = llm.tokenize(rendered.encode("utf-8"), add_bos=False, special=True)
+
+
+if True:
+    # prefill shared prefix
+    print(f"prefill ({len(tokens)} tokens)...")
+    llm.eval(tokens)
+    bookmark = llm.n_tokens
+    print(f"bookmark set at {bookmark}")
+
+    # --- query 1 ---
+    suffix_1 = "<|start_header_id|>user<|end_header_id|>\n\nQuery 1: brief answer please.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+    suffix_1_tokens = llm.tokenize(suffix_1.encode("utf-8"), add_bos=False, special=True)
+    llm.eval(suffix_1_tokens)
+    llm._sampler = llm._init_sampler(
+        top_k=1, top_p=1.0, min_p=0.0, typical_p=1.0,
+        temp=0.0, repeat_penalty=1.1,
+        frequency_penalty=0.0, presence_penalty=0.0,
+        tfs_z=1.0, mirostat_mode=0, mirostat_tau=5.0,
+        mirostat_eta=0.1, penalize_nl=True,
+        logits_processor=None, grammar=None,
+    )
+    sampled_tokens = []
+    while True:
+        sampled_token = llm.sample()
+        if (sampled_token == llm.token_eos()) or (len(sampled_tokens) >= max_sample_len):
+            break
+        sampled_tokens.append(sampled_token)
+        llm.eval([sampled_token])
+    result_1 = llm.detokenize(sampled_tokens).decode("utf-8", errors="ignore")
+    print(f"QUERY 1 RESULT: {result_1}")
+
+    # --- rollback to bookmark ---
+    llm._ctx.kv_cache_seq_rm(0, bookmark, -1)
+    llm.n_tokens = bookmark
+    print(f"rolled back to {bookmark}, n_tokens now {llm.n_tokens}")
+
+    # --- query 2 ---
+    suffix_2 = "<|start_header_id|>user<|end_header_id|>\n\nQuery 2: elaborate in detail please.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
+    suffix_2_tokens = llm.tokenize(suffix_2.encode("utf-8"), add_bos=False, special=True)
+    llm.eval(suffix_2_tokens)
+    llm._sampler = llm._init_sampler(
+        top_k=1, top_p=1.0, min_p=0.0, typical_p=1.0,
+        temp=0.0, repeat_penalty=1.1,
+        frequency_penalty=0.0, presence_penalty=0.0,
+        tfs_z=1.0, mirostat_mode=0, mirostat_tau=5.0,
+        mirostat_eta=0.1, penalize_nl=True,
+        logits_processor=None, grammar=None,
+    )
+    sampled_tokens = []
+    while True:
+        sampled_token = llm.sample()
+        if (sampled_token == llm.token_eos()) or (len(sampled_tokens) >= max_sample_len):
+            break
+        sampled_tokens.append(sampled_token)
+        llm.eval([sampled_token])
+    result_2 = llm.detokenize(sampled_tokens).decode("utf-8", errors="ignore")
+    print(f"QUERY 2 RESULT: {result_2}")
+
+    # --- use result_2 as the assistant turn for this round ---
+    messages.append({"role": "assistant", "content": result_2})
+    user_input = input("USER: ")
+    messages.append({"role": "user", "content": user_input})
+
+
+sys.exit()
 
 while True:   # turn loop
 
