@@ -24,15 +24,14 @@ LLAMA_FLAGS="\
   --mirostat-ent 5.0  \
   --seed 2 \
   --n-predict 200 \
-  --system-prompt-file tb/system_prompt_test.txt  \
-  --chat-template-file tb/chat_template.jinja  \
+  -f tb/test_prompt.txt \
+  --no-conversation \
 "
 
 # have used these two together to skip sys prompt
-#  -f tb/test_prompt.txt \
-#  --no-conversation \
 
-$LLAMA_EXE $LLAMA_FLAGS -p "`cat prompts/init.txt`" --verbose-prompt
+#$LLAMA_EXE $LLAMA_FLAGS -p "`cat prompts/init.txt`" --verbose-prompt
+$LLAMA_EXE $LLAMA_FLAGS --verbose-prompt
 
 # don't use -p if non-conversation
 # $LLAMA_EXE $LLAMA_FLAGS  --verbose-prompt
