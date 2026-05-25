@@ -1,5 +1,6 @@
 import sys
 from llama_cpp import Llama
+import llama_cpp
 import inspect
 from jinja2 import Template
 
@@ -51,23 +52,7 @@ llm = Llama(
         idx=None, #Optional[int]
 )
 
-llm._sampler = llm._init_sampler(
-    top_k=1,
-    top_p=1.0,
-    min_p=0.0,
-    typical_p=1.0,
-    temp=0.0,
-    repeat_penalty=1.0,
-    frequency_penalty=0.0,
-    presence_penalty=0.0,
-    tfs_z=1.0,
-    mirostat_mode=0,
-    mirostat_tau=5.0,
-    mirostat_eta=0.1,
-    penalize_nl=True,
-    logits_processor=None,
-    grammar=None,
-)
+# Note for later: Also note for later — kv_cache_seq_rm and kv_cache_seq_cp are both there, which is exactly what we'll need for Step 2's bookmark/rollback mechanism. Good to know they're accessible.
 
 #for first-time devel
 # print("\n----------Llama------------")
@@ -88,50 +73,84 @@ llm._sampler = llm._init_sampler(
 print("jinja...")
 template_str = llm.metadata.get("tokenizer.chat_template")
 t = Template(template_str)
-rendered = t.render(
-    messages=[
+
+messages = [
         {"role": "system", "content": system_behavior_prompt + system_formatting_prompt},
         {"role": "user",   "content": initial_prompt}
-    ],
-    add_generation_prompt=True,
-    bos_token="<|begin_of_text|>",
-    eos_token="<|eot_id|>",
-    tools=None,
-)
-print(repr(rendered))
+    ]
 
-print("tokenize...")
-tokens = llm.tokenize(rendered.encode("utf-8"), add_bos=False, special=True)
 
-print("---------prompt tokens (system + initial user) to be input to eval()----------")
-print(repr(tokens))
-print(f"token count: {len(tokens)}")
+while True:   # turn loop
 
-# prompt evaluation (prefill)
-print("prefill...")
-llm.eval(tokens)
+    print("-------messages------\n"+repr(messages)+"\n----------")
+    rendered = t.render(
+        messages=messages,
+        add_generation_prompt=True,
+        bos_token="<|begin_of_text|>",
+        eos_token="<|eot_id|>",
+        tools=None,
+    )
+    #print("-------rendered prompt--------\n"+repr(rendered)+"\n-----------")
 
-# generation
-print("generate...")
-sampled_tokens = []
-while True:
+    tokens = llm.tokenize(rendered.encode("utf-8"), add_bos=False, special=True)
 
-    sampled_token = llm.sample()
-    sampled_text = llm.detokenize([sampled_token]).decode("utf-8", errors="ignore")
-    # print(f"sampled token: {sampled_token} (text: -{sampled_text}-)")
-    if (sampled_token == llm.token_eos()) or (len(sampled_tokens) >= max_sample_len):
-        break
-    sampled_tokens.append(sampled_token)
-    # print(f"n_tokens={llm.n_tokens};  llm.n_tokens: {llm.n_tokens}")
+    # reset KV cache and position
+    llm._ctx.kv_cache_clear()
+    llm.n_tokens = 0
+
+    llm._sampler = llm._init_sampler(
+        top_k=1,
+        top_p=1.0,
+        min_p=0.0,
+        typical_p=1.0,
+        temp=0.0,
+        repeat_penalty=1.0,
+        frequency_penalty=0.0,
+        presence_penalty=0.0,
+        tfs_z=1.0,
+        mirostat_mode=0,
+        mirostat_tau=5.0,
+        mirostat_eta=0.1,
+        penalize_nl=True,
+        logits_processor=None,
+        grammar=None,
+    )
+
+    # prompt evaluation (prefill)
+    print(f"prefill...\n" + repr(tokens) + "\n")
+    llm.eval(tokens)
+
+    # generation
+    print("generate...")
+    sampled_tokens = []
+    while True:
+
+        sampled_token = llm.sample()
+        sampled_text = llm.detokenize([sampled_token]).decode("utf-8", errors="ignore")
+        # print(f"sampled token: {sampled_token} (text: -{sampled_text}-)")
+        if (sampled_token == llm.token_eos()) or (len(sampled_tokens) >= max_sample_len):
+            break
+        sampled_tokens.append(sampled_token)
+        # print(f"n_tokens={llm.n_tokens};  llm.n_tokens: {llm.n_tokens}")
     
-    # manually maintain input_ids so repeat penalty works
-    llm.input_ids[llm.n_tokens-1] = sampled_token
-    
-    llm.eval([sampled_token])
+        llm.eval([sampled_token])
 
-print("---------sampled tokens--------")
-print(repr(sampled_tokens))
-generated_text = llm.detokenize(sampled_tokens).decode("utf-8", errors="ignore")
-print(generated_text)
+        #print("---------sampled tokens--------"+repr(sampled_tokens))
+        generated_text = llm.detokenize(sampled_tokens).decode("utf-8", errors="ignore")
+        #print(generated_text)
+
+    # end of sample loop
+    
+    # append assistant response to message history
+    messages.append({"role": "assistant", "content": generated_text})
+
+    print(f"ASSISTANT: {generated_text}")
+
+    # get user input, tokenize, and append
+    user_input = input("USER: ")
+
+    messages.append({"role": "user", "content": user_input})
+
+# end of turn loop
 
 
