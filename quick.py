@@ -4,6 +4,34 @@ import llama_cpp
 import inspect
 from jinja2 import Template
 
+def get_turn_tokens(llm, t, role, content):
+    # render a fake two-turn conversation where the second turn is what we want
+    rendered = t.render(
+        messages=[
+            {"role": "user", "content": "X"},
+            {"role": role, "content": content},
+        ],
+        add_generation_prompt=(role != "assistant"),
+        bos_token="<|begin_of_text|>",
+        eos_token="<|eot_id|>",
+        tools=None,
+    )
+    # tokenize the full render, then subtract the tokens for just "X" turn
+    baseline = t.render(
+        messages=[{"role": "user", "content": "X"}],
+        add_generation_prompt=False,
+        bos_token="<|begin_of_text|>",
+        eos_token="<|eot_id|>",
+        tools=None,
+    )
+    full_tokens = llm.tokenize(rendered.encode("utf-8"), add_bos=False, special=True)
+    base_tokens = llm.tokenize(baseline.encode("utf-8"), add_bos=False, special=True)
+    # the new turn tokens are the suffix after the baseline
+    return full_tokens[len(base_tokens):]
+
+# end of def get_turn_tokens
+
+
 max_sample_len = 200
 
 MODEL_ROOT = "/mnt/models_nvme/models"
@@ -78,8 +106,14 @@ messages = [
         {"role": "system", "content": system_behavior_prompt + system_formatting_prompt},
         {"role": "user",   "content": initial_prompt}
     ]
+# messages = [
+#         {"role": "system", "content": system_behavior_prompt + system_formatting_prompt},
+#         {"role": "user",   "content": initial_prompt},
+#         {"role": "assistant",   "content": "Located in the northern region of Île-de-France, Paris is a city with a rich history and culture that dates back to the Roman era. It is known for its iconic landmarks such as the Eiffel Tower, Notre-Dame Cathedral, and the Louvre Museum.  Paris has been the capital of France since 987, when it was made the seat of the French monarchy. Over the centuries, the city has played a significant role in European and world history, being a major center of politics, art, and culture.  Today, Paris is a bustling metropolis with over 2.1 million people living within its city limits, and more than 12 million people living in the metropolitan area. The city is known for its fashion, cuisine, and tourism, attracting millions of visitors each year.  Some of the popular attractions in Paris include: * The Eiffel Tower: an iconic iron lattice tower that was built for the 1889 World"},
+#         {"role": "user",   "content": "and what is its population?"}
+#     ]
 
-print("-------messages------\n"+repr(messages)+"\n----------")
+print(f"-------initial message------\n"+repr(messages)+"\n----------")
 rendered = t.render(
     messages=messages,
     add_generation_prompt=True,
@@ -87,22 +121,30 @@ rendered = t.render(
     eos_token="<|eot_id|>",
     tools=None,
 )
-#print("-------rendered prompt--------\n"+repr(rendered)+"\n-----------")
+print("-------rendered system plus initial prompt--------\n"+repr(rendered)+"\n-----------")
 
 tokens = llm.tokenize(rendered.encode("utf-8"), add_bos=False, special=True)
 
+for iter in [0,1]:
 
-if True:
-    # prefill shared prefix
-    print(f"prefill ({len(tokens)} tokens)...")
+    # at the top of the loop, 'tokens' is the incremental query, either from the
+    # code above, in which case it is turn 0 (system prompt + initial prompt),
+    # or from the prior execution of the loop, in which case it is the user
+    # input from the prior turn.
+
+    # prefill
+    print(f"prefill ({len(tokens)} tokens, at n_tokens={llm.n_tokens}): "+ repr(tokens))
     llm.eval(tokens)
     bookmark = llm.n_tokens
-    print(f"bookmark set at {bookmark}")
+    print(f"bookmark set at n_tokens={bookmark}")
 
     # --- query 1 ---
     suffix_1 = "<|start_header_id|>user<|end_header_id|>\n\nQuery 1: brief answer please.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
     suffix_1_tokens = llm.tokenize(suffix_1.encode("utf-8"), add_bos=False, special=True)
     llm.eval(suffix_1_tokens)
+
+    print(f"after eval suffix_1, n_tokens={llm.n_tokens}")
+
     llm._sampler = llm._init_sampler(
         top_k=1, top_p=1.0, min_p=0.0, typical_p=1.0,
         temp=0.0, repeat_penalty=1.1,
@@ -112,24 +154,34 @@ if True:
         logits_processor=None, grammar=None,
     )
     sampled_tokens = []
+    print("----------\ndetokenize of input_ids:"+repr(llm.detokenize(list(llm.input_ids[:llm.n_tokens]))))
     while True:
         sampled_token = llm.sample()
+        print(f"  sampled: {sampled_token} = -{llm.detokenize([sampled_token]).decode('utf-8', errors='ignore')}-")
         if (sampled_token == llm.token_eos()) or (len(sampled_tokens) >= max_sample_len):
             break
         sampled_tokens.append(sampled_token)
         llm.eval([sampled_token])
+
+    print(f"QUERY 1 sampled_tokens: {repr(sampled_tokens)}")
+    print(f"after eval response_1, n_tokens={llm.n_tokens}")
+
     result_1 = llm.detokenize(sampled_tokens).decode("utf-8", errors="ignore")
     print(f"QUERY 1 RESULT: {result_1}")
 
     # --- rollback to bookmark ---
     llm._ctx.kv_cache_seq_rm(0, bookmark, -1)
+    old_n_tokens = llm.n_tokens
     llm.n_tokens = bookmark
-    print(f"rolled back to {bookmark}, n_tokens now {llm.n_tokens}")
+    print(f"rolled back from n_tokens={old_n_tokens} to n_tokens={bookmark}, n_tokens now {llm.n_tokens}")
 
     # --- query 2 ---
     suffix_2 = "<|start_header_id|>user<|end_header_id|>\n\nQuery 2: elaborate in detail please.<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n"
     suffix_2_tokens = llm.tokenize(suffix_2.encode("utf-8"), add_bos=False, special=True)
     llm.eval(suffix_2_tokens)
+
+    print(f"after eval query_2, n_tokens={llm.n_tokens}")
+
     llm._sampler = llm._init_sampler(
         top_k=1, top_p=1.0, min_p=0.0, typical_p=1.0,
         temp=0.0, repeat_penalty=1.1,
@@ -145,14 +197,22 @@ if True:
             break
         sampled_tokens.append(sampled_token)
         llm.eval([sampled_token])
+
+    print(f"after eval suffix_2, n_tokens={llm.n_tokens}")
+
     result_2 = llm.detokenize(sampled_tokens).decode("utf-8", errors="ignore")
     print(f"QUERY 2 RESULT: {result_2}")
 
-    # --- use result_2 as the assistant turn for this round ---
-    messages.append({"role": "assistant", "content": result_2})
     user_input = input("USER: ")
-    messages.append({"role": "user", "content": user_input})
 
+    # at this point, query_1 has been discarded;  result_1 has been sent to stdout
+    # and otherwise discarded; query_2 and result_2 are in the KV cache and
+    # n_tokens accounts for these.
+    # now we must render the user input; that will then be tokenized at the
+    # top of the loop for the next iteration.
+    tokens = get_turn_tokens(llm, t, "user", user_input)
+
+    print("user input, re-detokenized:-"+llm.detokenize(tokens).decode("utf-8", errors="ignore")+"-")
 
 sys.exit()
 
