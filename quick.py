@@ -4,6 +4,34 @@ import llama_cpp
 import inspect
 from jinja2 import Template
 
+class LlmManager:
+    def generate(self, prompt: str, display: bool) -> str:
+        #internally calls _render → _sync_kv_cache → _eval → _sample_loop
+
+    def _eval(self, tokens: list[int]) -> None:
+        self._llm.eval(tokens)
+        self._kv_tokens.extend(tokens)
+
+    def _rollback(self, position: int) -> None:
+        self._llm._ctx.kv_cache_seq_rm(0, position, -1)
+        self._llm.n_tokens = position
+        self._kv_tokens = self._kv_tokens[:position]
+
+    def _sample(self) -> int:
+        return self._llm.sample()
+    
+    def _sync_kv_cache(self, new_tokens: list[int]) -> None:
+        match_len = 0
+        for a, b in zip(self._kv_tokens, new_tokens):
+            if a != b:
+                break
+            match_len += 1
+        if match_len < len(self._kv_tokens):
+            self._rollback(match_len)
+        self._eval(new_tokens[match_len:])
+
+# end class LlmManager
+
 def get_turn_tokens(llm, t, role, content):
     # render a fake two-turn conversation where the second turn is what we want
     rendered = t.render(
