@@ -1,49 +1,160 @@
-from dataclasses import dataclass
+from __future__ import annotations
+import argparse
+from dataclasses import dataclass, field, fields
+import json
+from pathlib import Path
+import sys
+from typing import Any, Dict
+
 
 @dataclass
 class Config:
-    MODEL_ROOT = "/mnt/models_nvme/models"
-    MODEL_PATH = (f"{MODEL_ROOT}/L3.2-Rogue-Creative-Instruct-Uncensored-Abliterated-7B-D_AU-IQ4_XS.gguf")
+    # --- File Paths & Defaults ---
+    model: str = "/mnt/models_nvme/models/L3.2-Rogue-Creative-Instruct-Uncensored-Abliterated-7B-D_AU-IQ4_XS.gguf"
+    system_behavior_prompt_file: str = "tb/system_prompt_test.txt"
+    system_formatting_prompt_file: str = "/dev/null"
+    initial_prompt_file: str = "./prompts/init.txt"
 
-    system_behavior_prompt_file = "tb/system_prompt_test.txt"
-    system_formatting_prompt_file = "/dev/null"
-    initial_prompt_file = "./prompts/init.txt"
-    temperature = 0  # for debug
-    context_size = 4096
-    ngl = 999
+    # --- Runtime Parameters ---
+    ctx: int = 4096
+    ngl: int = 999
+    flash_attn: bool = True
+    seed: int = 1
+    max_sample_len: int = 200
 
-    max_sample_len=200
+    # --- Sampling Parameters ---
+    top_k: int = 1
+    top_p: float = 1.0
+    min_p: float = 0.0
+    typical_p: float = 1.0
+    temp: float = 0.0
+    repeat_penalty: float = 1.0
+    frequency_penalty: float = 0.0
+    presence_penalty: float = 0.0
+    tfs_z: float = 1.0
+    mirostat_mode: int = 0
+    mirostat_eta: float = 0.1
+    mirostat_tau: float = 5.0
+    penalize_nl: bool = True
 
-    with open(system_behavior_prompt_file, "r") as f:
-        system_behavior_prompt = " ".join(f.read().splitlines())
+    # --- Derived File Contents (populated at instantiation, omitted from init) ---
+    system_behavior_prompt: str = field(default="", init=False)
+    system_formatting_prompt: str = field(default="", init=False)
+    initial_prompt: str = field(default="", init=False)
 
-    with open(system_formatting_prompt_file, "r") as f:
-        system_formatting_prompt = " ".join(f.read().splitlines())
+    def __post_init__(self) -> None:
+        """Populates the string prompts once the exact file paths are settled."""
+        self.system_behavior_prompt = self._read_prompt(
+            self.system_behavior_prompt_file
+        )
+        self.system_formatting_prompt = self._read_prompt(
+            self.system_formatting_prompt_file
+        )
+        self.initial_prompt = self._read_prompt(self.initial_prompt_file)
 
-    with open(initial_prompt_file, "r") as f:
-        initial_prompt = " ".join(f.read().splitlines())
+    @staticmethod
+    def _read_prompt(path_str: str) -> str:
+        """Safely reads a prompt file if it exists, stripping linebreaks."""
+        path = Path(path_str)
+        if str(path) == "/dev/null" or not path.is_file():
+            return ""
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return " ".join(f.read().splitlines())
+        except OSError:
+            return ""
 
-    verbose: bool      = False  # to avoid spewage of library internal info into output stream
-    model_path: str    = MODEL_PATH
-    n_ctx: int         = context_size
-    n_gpu_layers: int  = ngl
-    flash_attn: bool   =True
-    seed: int          = 1
+    @classmethod
+    def load(cls) -> Config:
+        """Factory Method implementing the primary configuration chain:
 
-    top_k: int               = 1 
-    top_p: float             = 1.0 
-    min_p: float             = 0.0 
-    typical_p: float         = 1.0 
-    temp: float              = 0.0 
-    repeat_penalty: float    = 1.0 
-    frequency_penalty: float = 0.0 
-    presence_penalty: float  = 0.0 
-    tfs_z: float             = 1.0 
-    mirostat_mode: int       = 0 
-    mirostat_eta: float      = 0.1 
-    mirostat_tau: float      = 5.0 
-    penalize_nl: bool        = True 
-    logits_processor= None #Optional[LogitsProcessorList]
-    grammar= None #Optional[LlamaGrammar]
-    idx= None #Optional[int]
-    
+        1. Compile-time defaults (built into dataclass)
+        2. Home directory file override (~/.config/toyconfig.json)
+        3. Current working directory file override (./.config/toyconfig.json)
+        4. Command line flag override
+        """
+        config_dict: Dict[str, Any] = {}
+
+        # 2. Layer: Home Directory
+        home_config = Path.home() / ".config" / "toyconfig.json"
+        cls._merge_dict(config_dict, cls._deserialize(home_config))
+
+        # 3. Layer: Current Working Directory
+        cwd_config = Path.cwd() / ".config" / "toyconfig.json"
+        cls._merge_dict(config_dict, cls._deserialize(cwd_config))
+
+        # 4. Layer: Command Line
+        cls._merge_dict(config_dict, cls._parseargs())
+
+        # Returns perfectly resolved instance, prompting __post_init__ safely *once*
+        return cls(**config_dict)
+
+    @classmethod
+    def _merge_dict(cls, base: dict, overrides: dict) -> None:
+        """Mutates the base dictionary with valid dataclass inputs."""
+        valid_fields = {f.name for f in fields(cls) if f.init}
+        for key, value in overrides.items():
+            if key in valid_fields:
+                base[key] = value
+
+    @staticmethod
+    def _deserialize(path: Path) -> dict:
+        """Reads a JSON configuration layer file."""
+        if not path.is_file():
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, OSError):
+            return {}
+
+    @classmethod
+    def _parseargs(cls) -> dict:
+        """Dynamically builds CLI parser from initialized dataclass fields."""
+        parser = argparse.ArgumentParser(description="LLM Runner Configuration")
+
+        for f in fields(cls):
+            if not f.init:
+                continue
+
+            # Replace underscores with hyphens for clean command line switches
+            cli_name = f.name.replace("_", "-")
+
+            if f.type is bool:
+                # Add dual switches to explicitly declare truthiness
+                parser.add_argument(f"--{cli_name}", action="store_true")
+                parser.add_argument(f"--no-{cli_name}", action="store_true")
+            else:
+                parser.add_argument(f"--{cli_name}", type=f.type)
+
+        # Suppress defaults so argparse doesn't inject fields the user missed
+        # directly over lower-precedence JSON config layers
+        for action in parser._actions:
+            if action.dest != "help":
+                action.default = argparse.SUPPRESS
+
+        namespace = parser.parse_args(sys.argv[1:])
+        provided = vars(namespace)
+        resolved_bools: Dict[str, Any] = {}
+
+        # Reconstruct fields and resolve custom boolean logic
+        for f in fields(cls):
+            if not f.init:
+                continue
+
+            # Check what name argparse assigned to the destination property
+            dest_name = f.name
+
+            if f.type is bool:
+                # Use hyphens for the negative switch lookups
+                no_dest = f"no_{f.name}"
+
+                if dest_name in provided:
+                    resolved_bools[dest_name] = True
+                elif no_dest in provided:
+                    resolved_bools[dest_name] = False
+            elif dest_name in provided:
+                resolved_bools[dest_name] = provided[dest_name]
+
+        return resolved_bools
