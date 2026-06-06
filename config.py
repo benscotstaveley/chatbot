@@ -4,16 +4,17 @@ from dataclasses import dataclass, field, fields
 import json
 from pathlib import Path
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, get_type_hints
 
 
 @dataclass
 class Config:
+
     # --- File Paths & Defaults ---
     model: str = "/mnt/models_nvme/models/L3.2-Rogue-Creative-Instruct-Uncensored-Abliterated-7B-D_AU-IQ4_XS.gguf"
-    system_behavior_prompt_file: str = "tb/system_prompt_test.txt"
+    system_behavior_prompt_file: str   = "prompts/system.txt"
     system_formatting_prompt_file: str = "/dev/null"
-    initial_prompt_file: str = "./prompts/init.txt"
+    initial_prompt_file: str           = "prompts/init.txt"
 
     # --- Runtime Parameters ---
     ctx: int = 4096
@@ -76,11 +77,11 @@ class Config:
         config_dict: Dict[str, Any] = {}
 
         # 2. Layer: Home Directory
-        home_config = Path.home() / ".config" / "toyconfig.json"
+        home_config = Path.home() / ".config" / ".chatconfig.json"
         cls._merge_dict(config_dict, cls._deserialize(home_config))
 
         # 3. Layer: Current Working Directory
-        cwd_config = Path.cwd() / ".config" / "toyconfig.json"
+        cwd_config = Path.cwd() / ".config" / ".chatconfig.json"
         cls._merge_dict(config_dict, cls._deserialize(cwd_config))
 
         # 4. Layer: Command Line
@@ -114,19 +115,23 @@ class Config:
         """Dynamically builds CLI parser from initialized dataclass fields."""
         parser = argparse.ArgumentParser(description="LLM Runner Configuration")
 
+        # This automatically converts "int" back into int, "bool" back into bool, etc.
+        type_hints = get_type_hints(cls)
+
         for f in fields(cls):
             if not f.init:
                 continue
-
+            print(f"field -{f.name}-")
             # Replace underscores with hyphens for clean command line switches
             cli_name = f.name.replace("_", "-")
+            field_type = type_hints[f.name] # Safe, true Python type object
 
-            if f.type is bool:
+            if field_type is bool:
                 # Add dual switches to explicitly declare truthiness
                 parser.add_argument(f"--{cli_name}", action="store_true")
                 parser.add_argument(f"--no-{cli_name}", action="store_true")
             else:
-                parser.add_argument(f"--{cli_name}", type=f.type)
+                parser.add_argument(f"--{cli_name}", type=field_type)
 
         # Suppress defaults so argparse doesn't inject fields the user missed
         # directly over lower-precedence JSON config layers
@@ -145,8 +150,9 @@ class Config:
 
             # Check what name argparse assigned to the destination property
             dest_name = f.name
+            field_type = type_hints[f.name] # Safe, true Python type object
 
-            if f.type is bool:
+            if field_type is bool:
                 # Use hyphens for the negative switch lookups
                 no_dest = f"no_{f.name}"
 
