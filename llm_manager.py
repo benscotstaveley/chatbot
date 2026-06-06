@@ -22,10 +22,10 @@ class LlmManager:
     def __init__(self, config: Config) -> None:
         self._cached_tokens = []
         self._llm = Llama(
-            verbose=config.verbose,
-            model_path=config.model_path,
-            n_ctx=config.n_ctx,
-            n_gpu_layers=config.n_gpu_layers,
+            verbose=False, #TODO(ben): once logging is set up
+            model_path=config.model,
+            n_ctx=config.ctx,
+            n_gpu_layers=config.ngl,
             flash_attn=config.flash_attn,
             seed=config.seed,
 
