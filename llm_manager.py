@@ -55,9 +55,9 @@ class LlmManager:
     def generate_chat_reply(self, messages: list[dict[str, str]], config: Config = None, display: bool = True) -> str:
         '''Generate a response for a chat-formatted message list'''
 
-        current_prompt_token_list: [int]
+        current_prompt_token_list: list[int]
         sampled_token : int
-        sampled_tokens: [int]
+        sampled_tokens: list[int]
 
         print("-------message block--------\n" + repr(messages) + "--------------------")
 
@@ -74,7 +74,8 @@ class LlmManager:
         # updates the _cached_tokens list.
         self._sync_kv_cache(current_prompt_token_list)
 
-        # TODO(ben) i'm not 100% clear on why we need to do this.
+        # _sampler accumulates repeat penalty state across calls,
+        # so it must be reset for each independent generation
         self._llm._sampler = self._llm._init_sampler(
             top_k= config.top_k,
             top_p= config.top_p,
@@ -122,6 +123,7 @@ class LlmManager:
             if a != b:
                 break
             match_len += 1
+        print(f"_sync_kv_cache: cached={len(self._cached_tokens)}, new={len(new_tokens)}, match={match_len}")
         if match_len < len(self._cached_tokens):
             self._rollback(match_len)
         self._eval(new_tokens[match_len:])
