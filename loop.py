@@ -1,3 +1,4 @@
+import copy
 from logging import getLogger
 from config import Config
 from llm_manager import LlmManager
@@ -23,13 +24,13 @@ def loop(config:Config, llm_manager:LlmManager):
         # construct a prompt specific for brief query
         messages_iter = copy.deepcopy(messages)
         messages_iter[-1]["content"] += " Be brief."
-        reply_brief = llm_object.generate_chat_reply(messages_iter, config)
+        reply_brief = llm_manager.generate_chat_reply(messages_iter, config)
         logger.debug("-------brief reply:-------\n" + reply_brief)
 
         # construct a prompt specific for detailed query
         messages_iter = copy.deepcopy(messages)
         messages_iter[-1]["content"] += " Describe in detail."
-        reply_detailed = llm_object.generate_chat_reply(messages_iter, config)
+        reply_detailed = llm_manager.generate_chat_reply(messages_iter, config)
         logger.debug("-------detailed reply:-------\n" + reply_detailed)
 
         messages.append({"role": "assistant", "content": reply_brief})

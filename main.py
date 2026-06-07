@@ -1,4 +1,3 @@
-import copy
 from config import Config
 from llm_manager import LlmManager
 from loop import loop

@@ -83,21 +83,24 @@ class Config:
 
         # 2. Layer: Home Directory
         home_config = Path.home() / ".config" / ".chatconfig.json"
+        logger.debug(f"process home_config:{home_config}")
         update_dict =  cls._deserialize(home_config)
-        logger.debug("merging " + repr(update_dict) + " into " + repr(config_dict) )
+        logger.debug(f"file {home_config}: merging " + repr(update_dict) + " into " + repr(config_dict) )
         cls._merge_dict(config_dict, update_dict)
 
         # 3. Layer: Current Working Directory
         cwd_config = Path.cwd() / ".config" / ".chatconfig.json"
+        logger.debug(f"process cwd_config:{cwd_config}")
         update_dict =  cls._deserialize(cwd_config)
         logger.debug(f"file {cwd_config}: merging " + repr(update_dict) + " into " + repr(config_dict) )
         cls._merge_dict(config_dict, update_dict)
 
         # 4. Layer: Command Line
+        logger.debug("process command line")
         update_dict = cls._parseargs()
-        logger.debug("merging " + repr(update_dict) + " into " + repr(config_dict) )
+        logger.debug("cmdline: merging " + repr(update_dict) + " into " + repr(config_dict) )
         cls._merge_dict(config_dict, update_dict)
-        logger.debug("final config parameters: " + repr(config_dict))
+        logger.debug("final non-default config parameters: " + repr(config_dict))
         
         # Returns perfectly resolved instance, prompting __post_init__ safely *once*
         return cls(**config_dict)
@@ -116,15 +119,21 @@ class Config:
     def _deserialize(path: Path) -> dict:
         """Reads a JSON configuration layer file."""
         if not path.is_file():
+            logger.debug("file not found")
             return {}
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+                logger.debug(f"results of lson.load(): {data}")
                 # Safeguard: if json defines "log" as a single string, normalize it to a list
                 if isinstance(data, dict) and "log" in data and isinstance(data["log"], str):
                     data["log"] = [data["log"]]
                 return data if isinstance(data, dict) else {}
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError):
+            logger.error("json.JSONDecodeError" + repr(json.JSONDecodeError))
+            return {}
+        except (OSError):
+            logger.error("OS error trying to open file for deserialize")
             return {}
 
     @classmethod
