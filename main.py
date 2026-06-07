@@ -1,10 +1,7 @@
-# import sys
-# from llama_cpp import Llama
-# import llama_cpp
-# import inspect
 import copy
 from config import Config
 from llm_manager import LlmManager
+from loop import loop
 import logging
 
 # print("\n----------Llama------------")
@@ -16,38 +13,17 @@ def main():
 
     setup_logging(config.log)
 
-    logger = logging.getLogger("config")
-    print("----config parameters:------\n" + repr(config))
-    logger.debug("config logger is printing.")
+    logger = logging.getLogger(__name__)
+    logger.info("chatbot starting.")
+    logger.debug("config parameters:" + repr(config))
     
-    messages = [
-        {"role": "system", "content": config.system_behavior_prompt + config.system_formatting_prompt},
-    ]
+    llm_manager = LlmManager(config)
 
-    llm_object = LlmManager(config)
+    loop(
+        config=config,
+        llm_manager=llm_manager
+    )
 
-    while True:
-
-        user_input = input("USER: ")
-        messages.append({"role": "user", "content": user_input})
-
-        print("-----messages-----" + repr(messages) + "------------------")
-
-        # construct a prompt specific for brief query
-        messages_iter = copy.deepcopy(messages)
-        messages_iter[-1]["content"] += " Be brief."
-        reply_brief = llm_object.generate_chat_reply(messages_iter, config)
-        print("-------brief reply:-------\n" + reply_brief)
-
-        # construct a prompt specific for detailed query
-        messages_iter = copy.deepcopy(messages)
-        messages_iter[-1]["content"] += " Describe in detail."
-        reply_detailed = llm_object.generate_chat_reply(messages_iter, config)
-        print("-------detailed reply:-------\n" + reply_detailed)
-
-        messages.append({"role": "assistant", "content": reply_brief})
-
-    # end of while forever
 # end of main
 
 def setup_logging(log_directives: list[str]) -> None:
