@@ -4,7 +4,8 @@ from dataclasses import dataclass, field, fields
 import json
 from pathlib import Path
 import sys
-from typing import Any, Dict, get_type_hints
+from typing import Any, Dict, List, get_type_hints
+import logging
 
 
 @dataclass
@@ -39,6 +40,8 @@ class Config:
     penalize_nl: bool = True
 
     # --- Derived File Contents (populated at instantiation, omitted from init) ---
+    log: List[str] = field(default_factory=list)
+
     system_behavior_prompt: str = field(default="", init=False)
     system_formatting_prompt: str = field(default="", init=False)
     initial_prompt: str = field(default="", init=False)
@@ -95,7 +98,9 @@ class Config:
         """Mutates the base dictionary with valid dataclass inputs."""
         valid_fields = {f.name for f in fields(cls) if f.init}
         for key, value in overrides.items():
-            if key in valid_fields:
+            if isinstance(base.get(key), list) and isinstance(value, list):
+                base[key] = base[key] + value
+            else:
                 base[key] = value
 
     @staticmethod
@@ -106,6 +111,9 @@ class Config:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
+                # Safeguard: if json defines "log" as a single string, normalize it to a list
+                if isinstance(data, dict) and "log" in data and isinstance(data["log"], str):
+                    data["log"] = [data["log"]]
                 return data if isinstance(data, dict) else {}
         except (json.JSONDecodeError, OSError):
             return {}
@@ -121,15 +129,21 @@ class Config:
         for f in fields(cls):
             if not f.init:
                 continue
-            print(f"field -{f.name}-")
+
             # Replace underscores with hyphens for clean command line switches
             cli_name = f.name.replace("_", "-")
             field_type = type_hints[f.name] # Safe, true Python type object
+            # Check if the field is a List type (or typing.List)
+            # Origin checks for generic aliases like list or List
+            is_list = getattr(field_type, "__origin__", None) is list or field_type is list
 
             if field_type is bool:
                 # Add dual switches to explicitly declare truthiness
                 parser.add_argument(f"--{cli_name}", action="store_true")
                 parser.add_argument(f"--no-{cli_name}", action="store_true")
+            elif is_list:
+                # This allows passing --log multiple times
+                parser.add_argument(f"--{cli_name}", action="append")
             else:
                 parser.add_argument(f"--{cli_name}", type=field_type)
 
