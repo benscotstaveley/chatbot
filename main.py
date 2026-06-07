@@ -3,12 +3,19 @@ from config import Config
 from llm_manager import LlmManager
 from loop import loop
 import logging
+import os
 
-# print("\n----------Llama------------")
-# print(inspect.signature(Llama))
-
+# define BOOTSTRAP_DEBUG to debug pre-logger codepaths
 
 def main():
+    # Basic baseline configuration for the global root logger
+    # TODO(ben): Replace with QueueHandler / QueueListener deferred logging 
+    # to cleanly buffer early logs before config files are loaded.
+    # Quick bootstrap check for parsing phase
+    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    logging.basicConfig(level=logging.DEBUG if os.getenv("BOOTSTRAP_DEBUG") == "1" else logging.WARNING,
+                        format=log_format, datefmt="%Y-%m-%d %H:%M:%S")
+
     config = Config.load()
 
     setup_logging(config.log)
@@ -31,9 +38,6 @@ def setup_logging(log_directives: list[str]) -> None:
     
     Accepts: ["parser=debug", "llm=info,main=warning", "critical"]
     """
-    log_format = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-    # Basic baseline configuration for the global root logger
-    logging.basicConfig(level=logging.WARNING, format=log_format, datefmt="%Y-%m-%d %H:%M:%S")
 
     level_map = {
         "debug": logging.DEBUG,

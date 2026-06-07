@@ -5,7 +5,9 @@ import json
 from pathlib import Path
 import sys
 from typing import Any, Dict, List, get_type_hints
-import logging
+from logging import getLogger
+
+logger = getLogger(__name__)
 
 
 @dataclass
@@ -81,15 +83,22 @@ class Config:
 
         # 2. Layer: Home Directory
         home_config = Path.home() / ".config" / ".chatconfig.json"
-        cls._merge_dict(config_dict, cls._deserialize(home_config))
+        update_dict =  cls._deserialize(home_config)
+        logger.debug("merging " + repr(update_dict) + " into " + repr(config_dict) )
+        cls._merge_dict(config_dict, update_dict)
 
         # 3. Layer: Current Working Directory
         cwd_config = Path.cwd() / ".config" / ".chatconfig.json"
-        cls._merge_dict(config_dict, cls._deserialize(cwd_config))
+        update_dict =  cls._deserialize(cwd_config)
+        logger.debug(f"file {cwd_config}: merging " + repr(update_dict) + " into " + repr(config_dict) )
+        cls._merge_dict(config_dict, update_dict)
 
         # 4. Layer: Command Line
-        cls._merge_dict(config_dict, cls._parseargs())
-
+        update_dict = cls._parseargs()
+        logger.debug("merging " + repr(update_dict) + " into " + repr(config_dict) )
+        cls._merge_dict(config_dict, update_dict)
+        logger.debug("final config parameters: " + repr(config_dict))
+        
         # Returns perfectly resolved instance, prompting __post_init__ safely *once*
         return cls(**config_dict)
 
