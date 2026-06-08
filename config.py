@@ -63,11 +63,13 @@ class Config:
         """Safely reads a prompt file if it exists, stripping linebreaks."""
         path = Path(path_str)
         if str(path) == "/dev/null" or not path.is_file():
+            logger.debug("empty file: " + str(path))
             return ""
         try:
             with open(path, "r", encoding="utf-8") as f:
                 return " ".join(f.read().splitlines())
         except OSError:
+            logger.error("error reading " + str(path))
             return ""
 
     @classmethod
@@ -119,12 +121,12 @@ class Config:
     def _deserialize(path: Path) -> dict:
         """Reads a JSON configuration layer file."""
         if not path.is_file():
-            logger.debug("file not found")
+            logger.debug("file not found:" + str(path))
             return {}
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                logger.debug(f"results of lson.load(): {data}")
+                logger.debug(f"results of json.load(): {data}")
                 # Safeguard: if json defines "log" as a single string, normalize it to a list
                 if isinstance(data, dict) and "log" in data and isinstance(data["log"], str):
                     data["log"] = [data["log"]]

@@ -2,11 +2,15 @@
 from llama_cpp import Llama
 from config import Config
 from jinja2 import Template
+from logging import getLogger
+from datetime import datetime
 
 
 class LlmManager:
     '''Wraps the Llama object, to keep low-level KV cache in sync with python representation of it'''
 
+    logger = getLogger(__name__)
+    
     # the Llama LLM object
     _llm: Llama
 
@@ -60,14 +64,18 @@ class LlmManager:
         sampled_token : int
         sampled_tokens: list[int]
 
-        print("-------message block--------\n" + repr(messages) + "--------------------")
+        self.logger.debug("-------message block--------\n" + repr(messages) + "--------------------")
 
+        # decode the token IDs directly from your loaded model
+        model_bos = self._llm.detokenize([self._llm.token_bos()]).decode("utf-8")
+        model_eos = self._llm.detokenize([self._llm.token_eos()]).decode("utf-8")
         rendered = self._jinja_template.render(
             messages=messages,
             add_generation_prompt=True,
-            bos_token="<|begin_of_text|>",
-            eos_token="<|eot_id|>",
+            bos_token=model_bos,
+            eos_token=model_eos,
             tools=None,
+            strftime_now=lambda fmt: datetime.now().strftime(fmt)
         )
         current_prompt_token_list = self._llm.tokenize(rendered.encode("utf-8"), add_bos=False, special=True)
 
