@@ -32,29 +32,17 @@ class LlmManager:
             n_gpu_layers=config.ngl,
             flash_attn=config.flash_attn,
             seed=config.seed,
-
-            top_k=config.top_k,
-            top_p=config.top_p,
-            min_p=config.min_p,
-            typical_p=config.typical_p,
-            temp=config.temp,
-            repeat_penalty=config.repeat_penalty,
-            frequency_penalty=config.frequency_penalty,
-            presence_penalty=config.presence_penalty,
-            tfs_z=config.tfs_z,
-            mirostat_mode=config.mirostat_mode,
-            mirostat_eta=config.mirostat_eta,
-            mirostat_tau=config.mirostat_tau,
-            penalize_nl=config.penalize_nl,
-            logits_processor=None,  # Optional[LogitsProcessorList]
-            grammar=None,  # Optional[LlamaGrammar]
-            idx=None,  # Optional[int]
         )
         self._jinja_template_str = self._llm.metadata.get("tokenizer.chat_template")
         self.logger.info("chat template: " + self._jinja_template_str)
         self._jinja_template = Template(self._jinja_template_str)
 
-    def generate_chat_reply(self, messages: list[dict[str, str]], config: Config = None, display: bool = True) -> str:
+        # decode the token IDs directly from your loaded model
+        self.bos_str = self._llm._model.token_get_text(self._llm.token_bos())
+        self.eos_str = self._llm._model.token_get_text(self._llm.token_eos())
+
+        
+    def generate_chat_reply(self, messages: list[dict[str, str]], config: Config, stream: bool = True) -> str:
         '''Generate a response for a chat-formatted message list'''
 
         current_prompt_token_list: list[int]
@@ -63,20 +51,11 @@ class LlmManager:
 
         self.logger.debug("-------raw message block--------\n" + repr(messages) + "--------------------")
 
-        # decode the token IDs directly from your loaded model
-        model_bos = self._llm.detokenize([self._llm.token_bos()]).decode("utf-8")
-        model_eos = self._llm.detokenize([self._llm.token_eos()]).decode("utf-8")
-
-        bos_str = self._llm._model.token_get_text(self._llm.token_bos())
-        eos_str = self._llm._model.token_get_text(self._llm.token_eos())
-
         rendered = self._jinja_template.render(
             messages=messages,
             add_generation_prompt=True,
-            #bos_token=model_bos,
-            #eos_token=model_eos,
-            bos_token=bos_str,
-            eos_token=eos_str,
+            bos_token=self.bos_str,
+            eos_token=self.eos_str,
             tools=None,
             strftime_now=lambda fmt: datetime.now().strftime(fmt)
         )
@@ -125,6 +104,8 @@ class LlmManager:
                 break
             sampled_tokens.append(sampled_token)
             self._eval([sampled_token])
+            if stream == True:
+                print(self._llm.detokenize([sampled_token]).decode("utf-8", errors="ignore"), end="", flush=True)
 
         return self._llm.detokenize(sampled_tokens).decode("utf-8", errors="ignore")
 
@@ -146,7 +127,7 @@ class LlmManager:
             if a != b:
                 break
             match_len += 1
-        print(f"_sync_kv_cache: cached={len(self._cached_tokens)}, new={len(new_tokens)}, match={match_len}")
+        self.logger.debug(f"_sync_kv_cache: cached={len(self._cached_tokens)}, new={len(new_tokens)}, match={match_len}")
         if match_len < len(self._cached_tokens):
             self._rollback(match_len)
         self._eval(new_tokens[match_len:])

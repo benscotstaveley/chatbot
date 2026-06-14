@@ -1,4 +1,3 @@
-import copy
 from logging import getLogger
 from config import Config
 from llm_manager import LlmManager
@@ -14,6 +13,8 @@ def loop(config:Config, llm_manager:LlmManager):
 
     logger.info("messages list after adding system prompt:" + repr(messages))
 
+    stream:bool = True
+
     turn_number:int = 0
     while True:
 
@@ -21,7 +22,7 @@ def loop(config:Config, llm_manager:LlmManager):
         if turn_number==0:
             user_input = config.initial_prompt
         else:
-            user_input = input("USER: ")
+            user_input = input("\nUSER: ")
         messages.append({"role": "user", "content": user_input})
 
         logger.debug("-----messages-----" + repr(messages) + "------------------")
@@ -38,8 +39,9 @@ def loop(config:Config, llm_manager:LlmManager):
         # reply_detailed = llm_manager.generate_chat_reply(messages_iter, config)
         # logger.debug("-------detailed reply:-------\n" + reply_detailed)
 
-        reply = llm_manager.generate_chat_reply(messages, config)
-        print(reply)
+        reply = llm_manager.generate_chat_reply(messages=messages, config=config, stream=stream)
+        if not stream:
+            print(reply)
         messages.append({"role": "assistant", "content": reply})
 
         turn_number += 1

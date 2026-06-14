@@ -3,6 +3,7 @@ from llm_manager import LlmManager
 from loop import loop
 import logging
 import os
+import sys
 
 # define BOOTSTRAP_DEBUG to debug pre-logger codepaths
 

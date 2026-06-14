@@ -24,7 +24,7 @@ class Config:
     ngl: int = 999
     flash_attn: bool = True
     seed: int = 1
-    max_sample_len: int = 200
+    max_sample_len: int = 500
 
     # --- Sampling Parameters ---
     top_k: int = 1
@@ -57,6 +57,9 @@ class Config:
             self.system_formatting_prompt_file
         )
         self.initial_prompt = self._read_prompt(self.initial_prompt_file)
+
+        if not self.model:
+            raise ValueError("model path must be specified via config file or --model flag")
 
     @staticmethod
     def _read_prompt(path_str: str) -> str:
@@ -112,6 +115,9 @@ class Config:
         """Mutates the base dictionary with valid dataclass inputs."""
         valid_fields = {f.name for f in fields(cls) if f.init}
         for key, value in overrides.items():
+            if key not in valid_fields:
+                logger.warning(f"unknown config key ignored: '{key}'")
+                continue
             if isinstance(base.get(key), list) and isinstance(value, list):
                 base[key] = base[key] + value
             else:
@@ -131,8 +137,8 @@ class Config:
                 if isinstance(data, dict) and "log" in data and isinstance(data["log"], str):
                     data["log"] = [data["log"]]
                 return data if isinstance(data, dict) else {}
-        except (json.JSONDecodeError):
-            logger.error("json.JSONDecodeError" + repr(json.JSONDecodeError))
+        except json.JSONDecodeError as e:
+            logger.error(f"json.JSONDecodeError in {path}: {e}")
             return {}
         except (OSError):
             logger.error("OS error trying to open file for deserialize")
