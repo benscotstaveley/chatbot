@@ -14,7 +14,7 @@ logger = getLogger(__name__)
 class Config:
 
     # --- File Paths & Defaults ---
-    model: str = "/mnt/models_nvme/models/L3.2-Rogue-Creative-Instruct-Uncensored-Abliterated-7B-D_AU-IQ4_XS.gguf"
+    model: str = None
     system_behavior_prompt_file: str   = "prompts/system.txt"
     system_formatting_prompt_file: str = "/dev/null"
     initial_prompt_file: str           = "prompts/init.txt"

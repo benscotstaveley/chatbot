@@ -50,12 +50,9 @@ class LlmManager:
             grammar=None,  # Optional[LlamaGrammar]
             idx=None,  # Optional[int]
         )
-        # print("\n\n-----llama dir:\n")
-        # print( dir(_llm))
-        # print("jinja...")
         self._jinja_template_str = self._llm.metadata.get("tokenizer.chat_template")
+        self.logger.info("chat template: " + self._jinja_template_str)
         self._jinja_template = Template(self._jinja_template_str)
-        # print(self._template_str)
 
     def generate_chat_reply(self, messages: list[dict[str, str]], config: Config = None, display: bool = True) -> str:
         '''Generate a response for a chat-formatted message list'''
@@ -64,21 +61,37 @@ class LlmManager:
         sampled_token : int
         sampled_tokens: list[int]
 
-        self.logger.debug("-------message block--------\n" + repr(messages) + "--------------------")
+        self.logger.debug("-------raw message block--------\n" + repr(messages) + "--------------------")
 
         # decode the token IDs directly from your loaded model
         model_bos = self._llm.detokenize([self._llm.token_bos()]).decode("utf-8")
         model_eos = self._llm.detokenize([self._llm.token_eos()]).decode("utf-8")
+
+        bos_str = self._llm._model.token_get_text(self._llm.token_bos())
+        eos_str = self._llm._model.token_get_text(self._llm.token_eos())
+
         rendered = self._jinja_template.render(
             messages=messages,
             add_generation_prompt=True,
-            bos_token=model_bos,
-            eos_token=model_eos,
+            #bos_token=model_bos,
+            #eos_token=model_eos,
+            bos_token=bos_str,
+            eos_token=eos_str,
             tools=None,
             strftime_now=lambda fmt: datetime.now().strftime(fmt)
         )
+
+        # enable this file creation for correlation tests (against llama-cli).
+        # then run tokenize_my_prompt_with_llama
+        # with open("/tmp/test_prompt.txt", "w") as f:
+        #     f.write(rendered[len("<|begin_of_text|>"):])
+
+        self.logger.debug("-------rendered message block--------\n" + repr(rendered) + "--------------------")
+
         current_prompt_token_list = self._llm.tokenize(rendered.encode("utf-8"), add_bos=False, special=True)
 
+        self.logger.debug(f"tokenized prompt({len(current_prompt_token_list)}): " + repr(current_prompt_token_list))
+        self.logger.debug("parameters at the time of calling the sampler: " + repr(config))
         # perform prefill, using as much of the former prompt as possible.  this
         # updates the _cached_tokens list.
         self._sync_kv_cache(current_prompt_token_list)
@@ -107,6 +120,7 @@ class LlmManager:
         sampled_tokens = []
         while True:
             sampled_token = self._sample()
+            self.logger.debug(f"sampled[{len(sampled_tokens)}]: id={sampled_token} text='{self._llm.detokenize([sampled_token]).decode('utf-8', errors='ignore')}'")
             if (sampled_token == self._llm.token_eos()) or (len(sampled_tokens) >= config.max_sample_len):
                 break
             sampled_tokens.append(sampled_token)
