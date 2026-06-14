@@ -1,0 +1,24 @@
+How to correlate the chatloop against llama-cli output
+
+The llama-cli output does not reliably interpret the chat_template.
+Therefore we run llama-cli in no-cnv mode, which in turn implies
+that we need to provide it with a rendered template.  To do this,
+uncomment the code block in the chatloop that creates the rendered
+file.  in llm_manager.py look for:
+
+        # enable this file creation for correlation tests (against llama-cli).
+        # then run tokenize_my_prompt_with_llama
+        # with open("/tmp/test_prompt.txt", "w") as f:
+        #     f.write(rendered[len("<|begin_of_text|>"):])
+
+run for long enough to generate the prompt.  Then run
+./tokenize_my_prompt_with_llama.sh, which will pick up the
+rendered prompt from the previous step.
+
+The .chatconfig.json file in this directory has settings aproppriate
+to and matched with the settings in ./tokenize_my_prompt_with_llama.sh.
+
+Note that in prior tests we only matched to a few dozen tokens of
+output, but the output kept re-converging and re-diverging.  This is
+believed to be due to differences in the library and llama-cli
+codebase; the library is a few weeks newer.
