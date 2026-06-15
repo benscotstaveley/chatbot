@@ -19,6 +19,10 @@ class Config:
     system_formatting_prompt_file: str = "/dev/null"
     initial_prompt_file: str           = "prompts/init.txt"
 
+    # --- Diagnostic Modes ---
+    dump_prompts: bool = False
+    single_shot: bool = False
+
     # --- Runtime Parameters ---
     ctx: int = 4096
     ngl: int = 999

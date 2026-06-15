@@ -44,5 +44,8 @@ def loop(config:Config, llm_manager:LlmManager):
             print(reply)
         messages.append({"role": "assistant", "content": reply})
 
+        if config.single_shot:
+            break
+        
         turn_number += 1
     # end of while forever

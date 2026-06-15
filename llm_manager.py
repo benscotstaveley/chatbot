@@ -60,14 +60,23 @@ class LlmManager:
             strftime_now=lambda fmt: datetime.now().strftime(fmt)
         )
 
-        # enable this file creation for correlation tests (against llama-cli).
-        # then run tokenize_my_prompt_with_llama
-        # with open("/tmp/test_prompt.txt", "w") as f:
-        #     f.write(rendered[len("<|begin_of_text|>"):])
-
         self.logger.debug("-------rendered message block--------\n" + repr(rendered) + "--------------------")
 
         current_prompt_token_list = self._llm.tokenize(rendered.encode("utf-8"), add_bos=False, special=True)
+
+        # facilitates correlation tests against llama-cli.  this is a
+        # diagnostic function only.  This output can be used by -f in a
+        # llama-cli run to bypass chat_template processing.  Also
+        # can run tokenize_my_prompt_with_llama to see raw token list as
+        # tokenized by llama-cli.
+        # intentionally strip off the leading BOS because llama-cli adds
+        # that even if you tell it to use no-cnv mode.
+        if config.dump_prompts:
+            with open("rendered_prompt.txt", "w") as f:
+                f.write(rendered[len(self.bos_str):])
+            with open("tokenized_prompt.txt", "w") as f:
+                f.write(repr(current_prompt_token_list))
+
 
         self.logger.debug(f"tokenized prompt({len(current_prompt_token_list)}): " + repr(current_prompt_token_list))
         self.logger.debug("parameters at the time of calling the sampler: " + repr(config))
