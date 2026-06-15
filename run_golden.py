@@ -18,9 +18,10 @@ def main():
         "--min-p", str(config.min_p),
         "--typical-p", str(config.typical_p),
         "--repeat-penalty", str(config.repeat_penalty),
-        "-no-cnv",
         "-f", "rendered_prompt.txt",
-        "--seed", str(config.seed)
+        "--seed", str(config.seed),
+        "--single-turn",
+        "--simple-io"
         ]
 
     if config.flash_attn:
@@ -39,9 +40,10 @@ def main():
             text=True,
             check=True
         )
-        print(result.stdout)
         with open("golden.log", "w") as f:
             f.write(result.stdout)
+        with open("golden.err", "w") as f:
+            f.write(result.stderr)
 
     except subprocess.CalledProcessError as e:
         print("Command failed!")
