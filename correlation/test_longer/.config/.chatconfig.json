@@ -1,0 +1,15 @@
+{
+    "model":"/mnt/models_nvme/models/L3.2-Rogue-Creative-Instruct-Uncensored-Abliterated-7B-D_AU-IQ4_XS.gguf",
+    "temp": 0.0,
+    "ngl": 24,
+    "ctx":24576,
+    "top_p":1.0,
+    "top_k":1,
+    "repeat_penalty":1.00,
+    "min_p": 0.0,
+    "system_behavior_prompt_file": "sys_behavior.txt",
+    "system_formatting_prompt_file": "sys_formatting.txt",
+    "initial_prompt_file": "init.txt"
+}
+
+ 
