@@ -5,7 +5,7 @@ import subprocess
 def main():
 
     config = Config.load()
-    print(config)
+    # print(config)
 
     cmd=[
         "../../../../llama.cpp-latest/build/bin/llama-cli",
@@ -31,7 +31,7 @@ def main():
         cmd.append("--verbose-prompt")
         cmd.append("-v")
 
-    print(f"\nAbout to execute: -{" ".join(cmd)}-")
+    # print(f"\nAbout to execute: -{" ".join(cmd)}-")
 
     try:
         result = subprocess.run(
