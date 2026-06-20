@@ -1,8 +1,9 @@
 from logging import getLogger
 from config import Config
 from llm_manager import LlmManager
+from character import Character, choose_speaker
 
-def loop(config:Config, llm_manager:LlmManager):
+def loop(config:Config, llm_manager:LlmManager, roster:{Character}):
 
     logger = getLogger(__name__)
     logger.info("starting chat loop")
@@ -16,8 +17,14 @@ def loop(config:Config, llm_manager:LlmManager):
     stream:bool = True
 
     turn_number:int = 0
-    while True:
+    while turn_number<10:
 
+        this_character: Character = choose_speaker(roster)
+        print(this_character.name)
+        turn_number += 1
+        continue  # for now, to test choose_speaker()
+
+    
         # Human
         if turn_number==0:
             user_input = config.initial_prompt
@@ -46,6 +53,7 @@ def loop(config:Config, llm_manager:LlmManager):
 
         if config.single_shot:
             break
-        
+
+        logger.debug(f"\ntokens: {len(llm_manager._cached_tokens)}")
         turn_number += 1
     # end of while forever

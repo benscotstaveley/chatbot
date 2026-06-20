@@ -4,6 +4,7 @@ from loop import loop
 import logging
 import os
 import sys
+from character import Character
 
 # define BOOTSTRAP_DEBUG to debug pre-logger codepaths
 
@@ -17,6 +18,7 @@ def main():
                         format=log_format, datefmt="%Y-%m-%d %H:%M:%S")
 
     config = Config.load()
+    roster:{Character} = set()
 
     setup_logging(config.log)
 
@@ -26,9 +28,16 @@ def main():
     
     llm_manager = LlmManager(config)
 
+    # create our roster
+    roster.add(Character(name="NARRATOR", is_narrator=1))
+    roster.add(Character(name="", is_silent=1))
+    roster.add(Character(name="Alice"))
+    roster.add(Character(name="Bob", is_npc=1))
+
     loop(
         config=config,
-        llm_manager=llm_manager
+        llm_manager=llm_manager,
+        roster=roster
     )
 
 # end of main
