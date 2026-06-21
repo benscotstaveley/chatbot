@@ -5,35 +5,63 @@ import random
 from typing import ClassVar
 from dataclasses import dataclass, field
 from logging import getLogger
+from enum import Enum
 
 _logger: ClassVar[logging.Logger] = getLogger(__name__)
 
+SpeakerRole = Enum("SpeakerRole", ["NARRATOR", "SILENT", "HUMAN", "NPC"] )
+    
 @dataclass(eq=False)
 class Character:
 
     name: str
-    is_npc: bool            = False
-    is_narrator: bool       = False
-    is_silent: bool         = False
+    role: SpeakerRole
     wants_to_speak: float   = 0.0
+    talkativeness: float    = 0.5   # 0-1 scale
     pool: int               = 0
     relationships: dict[str, float] = field(default_factory=dict)
     beliefs: dict[str, str] = field(default_factory=dict)
     io_handle: Any          = None  # FastAPI websocket etc
     character_card: str     = ""  # injected into prompt
 
-
-def renormalize(subroster:[Character])-> None:
-    total: float = 0.0
+def format_wts(subroster: {Character})-> str:
+    formatted:str = ""
     for c in subroster:
-        total += c.wants_to_speak
+        if formatted != "":
+            formatted += "; "
+            
+        formatted += f"{c.name}: {c.wants_to_speak}"
 
-    if abs(total) > .001:
-        for c in subroster:
-            c.wants_to_speak -= total / len(subroster)
-
+    return formatted
         
-def choose_speaker(subroster:[Character], suppress_update:bool = False) -> Character:
+def renormalize(subroster:{Character})-> None:
+    minimal: float = None
+    maximal: float = None
+    for c in subroster:
+        if (minimal is None) or (c.wants_to_speak < minimal):
+            minimal = c.wants_to_speak
+        if (maximal is None) or (c.wants_to_speak > maximal):
+            maximal = c.wants_to_speak
+
+    if (maximal - minimal) > .001:
+        for c in subroster:
+            c.wants_to_speak = (c.wants_to_speak - minimal) / (maximal - minimal)
+
+def initialize_speaking_order(subroster: {Character})-> None:
+    for c in subroster:
+        if c.role == SpeakerRole.NARRATOR:
+            c.wants_to_speak = 1.0
+        else:
+            c.wants_to_speak = 0.0
+
+def update_speaking_order_for_delay(subroster: {Character})-> None:
+    for c in subroster:
+        c.wants_to_speak += c.talkativeness
+
+    renormalize(subroster)
+    
+
+def choose_speaker(subroster:{Character}, suppress_update:bool = False) -> Character:
 
     winner: Character  = None
     winning_score: float
@@ -47,7 +75,7 @@ def choose_speaker(subroster:[Character], suppress_update:bool = False) -> Chara
             winning_score = c.wants_to_speak
 
     if (winner is not None) and (not suppress_update):
-        winner.wants_to_speak -= 5.0 # TODO(ben) magic number should be parameter of some sort
+        winner.wants_to_speak -= len(subroster)
         renormalize(subroster)
         
     return winner

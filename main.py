@@ -4,7 +4,7 @@ from loop import loop
 import logging
 import os
 import sys
-from character import Character
+from character import Character, SpeakerRole
 
 # define BOOTSTRAP_DEBUG to debug pre-logger codepaths
 
@@ -29,10 +29,11 @@ def main():
     llm_manager = LlmManager(config)
 
     # create our roster
-    roster.add(Character(name="NARRATOR", is_narrator=1))
-    roster.add(Character(name="", is_silent=1))
-    roster.add(Character(name="Alice"))
-    roster.add(Character(name="Bob", is_npc=1))
+    roster.add(Character(name="NARRATOR", role=SpeakerRole.NARRATOR, talkativeness=0.0))
+    roster.add(Character(name="(pause)",  role=SpeakerRole.SILENT, talkativeness=0.1))
+    roster.add(Character(name="Tom",      role=SpeakerRole.HUMAN))
+    roster.add(Character(name="Characters",     role=SpeakerRole.NPC))
+    # roster.add(Character(name="Laura",    role=SpeakerRole.NPC))
 
     loop(
         config=config,
