@@ -1,14 +1,16 @@
 {
-    "model":"/mnt/models_nvme/models/L3.2-Rogue-Creative-Instruct-Uncensored-Abliterated-7B-D_AU-IQ4_XS.gguf",
-    "temp": 0.0,
+    "model":"/mnt/models_nvme/models/cognitivecomputations_Dolphin-Mistral-24B-Venice-Edition-Q4_K_M.gguf",
+    "temp": 0.9,
     "ngl": 24,
     "ctx":24576,
     "top_p":1.0,
-    "top_k":1,
-    "repeat_penalty":1.0,
-    "system_behavior_prompt_file": "correlation/prompt_simple/sys_behavior.txt",
-    "system_formatting_prompt_file": "correlation/prompt_simple/sys_formatting.txt",
-    "initial_prompt_file": "correlation/prompt_simple/init.txt"
+    "top_k":0,
+    "min_p":0.15,
+    "repeat_penalty":1.05,
+    "system_behavior_prompt_file": "./prompts/sys_behavior.txt",
+    "system_formatting_prompt_file": "./prompts/sys_formatting.txt",
+    "initial_prompt_file": "./prompts/init.txt",
+    "flash_attn":true
 }
 
  
