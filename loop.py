@@ -3,11 +3,14 @@ from config import Config
 from llm_manager import LlmManager
 from character import Character, choose_speaker, SpeakerRole, initialize_speaking_order, format_wts, update_speaking_order_for_delay
 import copy
+import re
 
 def loop(config:Config, llm_manager:LlmManager, roster:{Character}):
 
     logger = getLogger(__name__)
     logger.info("starting chat loop")
+
+    max_validate_attempts=3
 
     messages = [
         {"role": "system", "content": config.system_behavior_prompt + config.system_formatting_prompt},
@@ -29,8 +32,8 @@ def loop(config:Config, llm_manager:LlmManager, roster:{Character}):
 
         match this_speaker.role:
             case SpeakerRole.HUMAN:
-                user_input = input("\nUSER: ")
-                messages.append({"role": "user", "content": user_input})
+                user_input = input(f"\n[{this_speaker.name}]: ")
+                messages.append({"role": "user", "content": f"[{this_speaker.name}] " + user_input})
 
                 logger.debug("-----messages-----" + repr(messages) + "------------------")
 
@@ -68,13 +71,14 @@ def loop(config:Config, llm_manager:LlmManager, roster:{Character}):
                 # record it so we can unwind it.
 
                 prompt_intent = f"[DIRECTOR] Considering the goals and most recent emotional state" \
-                                 f" of {this_speaker.name}, provide a concise desciription of what" \
-                                 f" {this_speaker.name} will say and do right now"
+                                 f" of {this_speaker.name}, provide a concise (under approximately 10 words) description of what" \
+                                 f" {this_speaker.name} will say and do right now.  Don't provide actual dialog, just an outline:" \
+                                 f" topics to raise, topics to avoid, mood and disposition, and specific actions"
                 bookmark_turn = len(messages)
                 if messages[-1]['role'] == "user":
                     messages[-1]['content'] += "\n" + prompt_intent
                 else:
-                    messages.append({"role":user, content:prompt_intent})
+                    messages.append({"role": "user", "content": prompt_intent})
 
                 # eventually: add an enhancement where we pre-populate the assistant turn with
                 # "[NAME] ".  this will require some jinja magic.  it needs to be done
@@ -86,15 +90,18 @@ def loop(config:Config, llm_manager:LlmManager, roster:{Character}):
 
                 # validation loop
                 bookmark_validate = len(messages)
-                validate_attempts=3
+                validate_attempts=max_validate_attempts
                 zero_temp_config = copy.copy(config)  # shallow copy is OK as we change only temp
                 zero_temp_config.temp = 0.0
-                while validate_attempts > 0 :
+                while True :  # breaks on validate pass or 'max_validate_attempts' failures
 
+                    logger.debug(f"validation attempt countdown: {validate_attempts}")
                     # at this point, either from first iteration or from end of prior iteration,
                     # we have 'messages' ending with user: [DIRECTOR].
-                    
+
+                    logger.debug(f"calling generate_chat_reply() with [DIRECTOR] requesting concise summary intent: {messages}")
                     reply = llm_manager.generate_chat_reply(messages=messages, config=zero_temp_config, stream=False) # TODO(ben) pass postrender_text
+                    logger.debug(f"got this concise statement of intent: {reply}")
                     best_statement_of_intent = reply
 
                     # this becomes the model's (ephemeral) statement of intent, initial attempt
@@ -103,48 +110,55 @@ def loop(config:Config, llm_manager:LlmManager, roster:{Character}):
                     # validate
                     messages.append({"role":"user",
                                     "content":f"[DIRECTOR] Consider the above statement of what {this_speaker.name} intends to say and do." \
-                                     f" Is it consistent with all goals, beliefs, and current mindset of {this_speaker.name}?" \
+                                     f" Does it directly contradict any of the goals, beliefs, and current mindset of {this_speaker.name}?" \
                                      f" Reply with one word: YES or NO"
                                     }
                                    )
+                    logger.debug(f"calling generate_chat_reply with [DIRECTOR] asking for validation: {messages}")
                     reply = llm_manager.generate_chat_reply(messages=messages, config=zero_temp_config, stream=False)
+                    logger.debug(f"got this answer of suitability: {reply}")
 
                     match reply:
-                        case "YES":
+                        case x if re.search(r"\bNO\b", x, re.IGNORECASE):
+                            logger.debug("verification passed")
                             break
-                        case "NO":
-                            pass
+                        case x if re.search(r"\bYES\b", x, re.IGNORECASE):
+                            logger.debug("verification failed")
                         case _:
-                            logger.info(f"garbled response from LLM (should be YES or NO: {reply}")
+                            logger.info(f"garbled response from LLM: {reply}")
+                            logger.debug("verification failed")
                             # fall through to NO (fail) case
 
+                    validate_attempts -= 1
+                    if validate_attempts == 0:
+                        break
+
                     # lay the groundwork for another attempt
-                    message.append({"role":"assistant", "content": "NO"})
-                    message.append({"role":"user", "content": "[DIRECTOR] State briefly why the intended action is unacceptable."})
+                    messages.append({"role":"assistant", "content": "YES"})
+                    messages.append({"role":"user", "content": "[DIRECTOR] State briefly (under approximately 10 words) why the intended action is unacceptable."})
                     reply = llm_manager.generate_chat_reply(messages=messages, config=zero_temp_config, stream=False)
-                    message.append({"role":"assistant", "content": reply})
+                    messages.append({"role":"assistant", "content": reply})
                     logger.info(f"LLM rejected its statement of intent because: {reply}")
-                    message.append({"role":"user",
+                    messages.append({"role":"user",
                                     "content":f"[DIRECTOR] Upon consideration, you found your previous statement of intent for {this_speaker.name}" \
                                     f" to be unacceptable." \
                                     f" Considering again the goals and most recent emotional state" \
-                                    f" of {this_speaker.name}, provide a concise desciription of what" \
+                                    f" of {this_speaker.name}, provide a concise description of what" \
                                     f" {this_speaker.name} will say and do right now"
                                     }
                                    )
-                    reply = llm_manager.generate_chat_reply(messages=messages, config=zero_temp_config, stream=False)
 
-                    validate_attempts -= 1
 
                 # end of validation loop.  exit with validate_attempts>0: success, ==0: fail.
                 # either way, best_statement_of_intent is as good as we're going to get.
                 # TODO: should we do something in fail case other than log it?
-                logger.warning(f"validation repeatedly failed at turn {bookmark_turn}")
+                if validate_attempts==0:
+                    logger.warning(f"validation repeatedly failed at turn {bookmark_turn}")
                 del messages[bookmark_validate:]
-                messages.append({"role":"assistant", content: best_statement_of_intent})
-                message.append({"role":"user", "content": f"[DIRECTOR] Given the above statement of intent for {this_speaker.name}," \
+                messages.append({"role":"assistant", "content": best_statement_of_intent})
+                messages.append({"role":"user", "content": f"[DIRECTOR] Given the above statement of intent for {this_speaker.name}," \
                                 f" write a complete response for {this_speaker.name} that embodies this intent and aligns with" \
-                                f" the speaking style of {this_character.name} and stylistic requirements of the current situation."
+                                f" the speaking style of {this_speaker.name} and stylistic requirements of the current situation."
                                 })
                 
                 reply = llm_manager.generate_chat_reply(messages=messages, config=config, stream=stream)# TODO: preload with name of character

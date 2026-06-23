@@ -31,8 +31,10 @@ def main():
     # create our roster
     roster.add(Character(name="NARRATOR", role=SpeakerRole.NARRATOR, talkativeness=0.0))
     roster.add(Character(name="(pause)",  role=SpeakerRole.SILENT, talkativeness=0.1))
-    roster.add(Character(name="Tom",      role=SpeakerRole.HUMAN))
-    roster.add(Character(name="Characters",     role=SpeakerRole.NPC))
+    roster.add(Character(name="Alice",    role=SpeakerRole.HUMAN))
+    roster.add(Character(name="Bob",      role=SpeakerRole.NPC))
+    roster.add(Character(name="Claire",   role=SpeakerRole.NPC))
+    roster.add(Character(name="Dave",     role=SpeakerRole.NPC))
     # roster.add(Character(name="Laura",    role=SpeakerRole.NPC))
 
     loop(

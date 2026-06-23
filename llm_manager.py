@@ -50,6 +50,7 @@ class LlmManager:
         sampled_tokens: list[int]
 
         self.logger.debug("-------raw message block--------\n" + repr(messages) + "--------------------")
+        self.logger.info(f"final entry in messages block: {messages[-1]}")
 
         rendered = self._jinja_template.render(
             messages=messages,
@@ -116,7 +117,9 @@ class LlmManager:
             if stream == True:
                 print(self._llm.detokenize([sampled_token]).decode("utf-8", errors="ignore"), end="", flush=True)
 
-        return self._llm.detokenize(sampled_tokens).decode("utf-8", errors="ignore")
+        reply = self._llm.detokenize(sampled_tokens).decode("utf-8", errors="ignore")
+        self.logger.info(f"reply: -{reply}-")
+        return reply
 
     def _eval(self, tokens: list[int]) -> None:
         self._llm.eval(tokens)
