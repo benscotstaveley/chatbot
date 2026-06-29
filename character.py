@@ -6,6 +6,10 @@ from typing import ClassVar
 from dataclasses import dataclass, field
 from logging import getLogger
 from enum import Enum
+import re
+import sys
+import json
+from pathlib import Path
 
 _logger: ClassVar[logging.Logger] = getLogger(__name__)
 
@@ -80,8 +84,53 @@ def choose_speaker(subroster:{Character}, suppress_update:bool = False) -> Chara
         
     return winner
         
+def increase_mentioned_character_speaking_priority(subroster:{Character}, speech: str) -> None:
+    for c in subroster:
+        if bool(re.search(rf'\b{re.escape(c.name)}\b', speech, re.IGNORECASE)):
+            c.wants_to_speak += 0.4
+            _logger.debug(f"raising WTS for {c.name} because character was mentioned by current speaker")
+    renormalize(subroster)
+ 
+        
+def initialize_roster(roster: set(Character), roster_file:str)-> None:
+    roster.add(Character(name="NARRATOR", role=SpeakerRole.NARRATOR, talkativeness=0.0))
+    roster.add(Character(name="(pause)",  role=SpeakerRole.SILENT, talkativeness=0.1))
 
+    path = Path(roster_file)
+    if not path.is_file():
+        _logger.error(f"character roster file not found: {roster_file}")
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            character_list = json.load(f)
+            for character in character_list:
+                 _logger.debug(f"adding character {character}")
+                 # sanitize
+                 character_name : str | None = character.get("name")
+                 if character_name is None:
+                     _logger.error(f"reading roster: character {character} does not have a 'name'")
+                     continue
+                 character_role : str | None = character.get("role")
+                 if character_role is None:
+                     _logger.error(f"reading roster: character {character} does not have a 'role'")
+                     continue
+                 character_role_enum: SpeakerRole
+                 try:
+                     character_role_enum = SpeakerRole[character_role.upper()]
+                 except KeyError:
+                     _logger.error(f"reading roster: character {character} has a role '{character_role}' that is not understood.")
+                     continue
+                 
+                 # TODO(ben) more sanity checking; extract more fields
+                 roster.add(Character(name=character_name, role=character_role_enum))
 
+            _logger.info(f"final roster: {roster}")
+    except json.JSONDecodeError as e:
+        _logger.error(f"error reading character roster file {roster_file}: {e}")
+        return{}
+    except OSError as e:
+        _logger.error(f"OS error trying to open character roster file {roster_file}: {e}")
+        return {}
 
 # 1. Character class with wants-to-speak and speaker selection
 # 2. Narrator as special character (validates the framework)

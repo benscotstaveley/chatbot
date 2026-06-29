@@ -18,7 +18,8 @@ class Config:
     system_behavior_prompt_file: str   = "prompts/system.txt"
     system_formatting_prompt_file: str = "/dev/null"
     initial_prompt_file: str           = "prompts/init.txt"
-
+    roster_file: str                   = "prompts/roster.txt"
+    
     # --- Diagnostic Modes ---
     dump_prompts: bool = False
     single_shot: bool = False
